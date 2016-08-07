@@ -83,7 +83,7 @@ func execute(name string, c collector.Collector, ch chan<- prometheus.Metric) {
 }
 
 func filterAvailableCollectors(collectors string) string {
-	availableCollectors := make([]string, 0)
+	availableCollectors := []string{}
 	for _, c := range strings.Split(collectors, ",") {
 		_, ok := collector.Factories[c]
 		if ok {
