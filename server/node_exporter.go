@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/juju/errors"
 	"github.com/ngaut/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/version"
@@ -82,38 +81,28 @@ func execute(name string, c collector.Collector, ch chan<- prometheus.Metric) {
 	scrapeDurations.WithLabelValues(name, result).Observe(duration.Seconds())
 }
 
-func filterAvailableCollectors(collectors string) string {
-	availableCollectors := []string{}
-	for _, c := range strings.Split(collectors, ",") {
-		_, ok := collector.Factories[c]
-		if ok {
-			availableCollectors = append(availableCollectors, c)
-		}
-	}
-	return strings.Join(availableCollectors, ",")
-}
-
-func loadCollectors(list string) (map[string]collector.Collector, error) {
+func mustLoadCollectors(list string) map[string]collector.Collector {
 	collectors := map[string]collector.Collector{}
-	for _, name := range strings.Split(list, ",") {
+	collectorNames := strings.Split(list, ",")
+	for _, name := range collectorNames {
 		fn, ok := collector.Factories[name]
-		if !ok {
-			return nil, errors.Errorf("collector '%s' not available", name)
+		if ok {
+			c, err := fn()
+			if err != nil {
+				panic(err)
+			}
+
+			collectors[name] = c
 		}
-		c, err := fn()
-		if err != nil {
-			return nil, errors.Trace(err)
-		}
-		collectors[name] = c
 	}
-	return collectors, nil
+
+	return collectors
 }
 
 func init() {
 	prometheus.MustRegister(version.NewCollector("node_exporter"))
 
-	collectorList := filterAvailableCollectors(defaultCollectors)
-	collectors, _ := loadCollectors(collectorList)
+	collectors := mustLoadCollectors(defaultCollectors)
 	nodeCollector := NodeCollector{collectors: collectors}
 	prometheus.MustRegister(nodeCollector)
 }
