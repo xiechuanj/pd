@@ -14,8 +14,6 @@
 package server
 
 import (
-	"math"
-
 	"github.com/ngaut/log"
 	"github.com/pingcap/kvproto/pkg/metapb"
 )
@@ -65,7 +63,7 @@ func scoreThreshold(cfg *BalanceConfig, st scoreType) float64 {
 }
 
 func calculateDiffScore(from, to uint64) float64 {
-	return float64(from-to) / float64(from)
+	return (float64(from) - float64(to)) / float64(from)
 }
 
 type scoreType byte
@@ -108,7 +106,7 @@ func (ls *leaderScorer) Score(store *storeInfo) float64 {
 func (ls *leaderScorer) DiffScore(from *storeInfo, to *storeInfo) (float64, float64) {
 	fromCount := uint64(from.stats.LeaderRegionCount)
 	toCount := uint64(to.stats.LeaderRegionCount)
-	if fromCount <= 0 || fromCount <= toCount {
+	if fromCount <= 1 || fromCount <= toCount {
 		return 0.0, 0.0
 	}
 	diffScore := calculateDiffScore(fromCount, toCount)
@@ -170,8 +168,8 @@ func checkAndGetDiffScore(cluster *clusterInfo, oldPeer *metapb.Peer, newPeer *m
 			st, oldPeer, newPeer, oldStoreScore, newStoreScore, diffScore)
 		return nil, false
 	}
-	if math.Abs(diffScore) <= math.Abs(postDiffScore) {
-		log.Debugf("check score failed - diff score is not bigger than post diff score - score type: %v, old peer: %v, new peer: %v, old store score: %v, new store score: %v, diff score: %v, post diff score: %v",
+	if postDiffScore < 0 {
+		log.Debugf("check score failed - post diff score is negative - score type: %v, old peer: %v, new peer: %v, old store score: %v, new store score: %v, diff score: %v, post diff score: %v",
 			st, oldPeer, newPeer, oldStoreScore, newStoreScore, diffScore, postDiffScore)
 		return nil, false
 	}

@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	. "github.com/pingcap/check"
 	raftpb "github.com/pingcap/kvproto/pkg/eraftpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
@@ -74,11 +73,11 @@ func (s *testBalancerSuite) updateStore(c *C, clusterInfo *clusterInfo, storeID 
 	sendingSnapCount uint32, receivingSnapCount uint32) {
 	regionSize := uint64(64 * 1024 * 1024)
 	stats := &pdpb.StoreStats{
-		StoreId:            proto.Uint64(storeID),
-		Capacity:           proto.Uint64(uint64(maxRegionCount) * regionSize),
-		Available:          proto.Uint64(uint64(availableRegionCount) * regionSize),
-		SendingSnapCount:   proto.Uint32(sendingSnapCount),
-		ReceivingSnapCount: proto.Uint32(receivingSnapCount),
+		StoreId:            storeID,
+		Capacity:           uint64(maxRegionCount) * regionSize,
+		Available:          uint64(availableRegionCount) * regionSize,
+		SendingSnapCount:   sendingSnapCount,
+		ReceivingSnapCount: receivingSnapCount,
 	}
 
 	ok := clusterInfo.updateStoreStatus(stats)
@@ -93,7 +92,7 @@ func (s *testBalancerSuite) addRegion(c *C, clusterInfo *clusterInfo, storeID ui
 	regionID, err := clusterInfo.idAlloc.Alloc()
 	c.Assert(err, IsNil)
 	region := s.newRegion(c, regionID, start_key, end_key, []*metapb.Peer{peer}, nil)
-	region.RegionEpoch.Version = proto.Uint64(regionID)
+	region.RegionEpoch.Version = regionID
 
 	_, _, err = clusterInfo.regions.heartbeat(region, peer)
 	c.Assert(err, IsNil)
