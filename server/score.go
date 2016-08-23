@@ -14,23 +14,25 @@
 package server
 
 import (
+	"math"
+
 	"github.com/ngaut/log"
 	"github.com/pingcap/kvproto/pkg/metapb"
 )
 
-const noThreshold = -1
+const noThreshold = -1.0
 
 type score struct {
-	from      int
-	to        int
-	diff      int
-	threshold int
+	from      float64
+	to        float64
+	diff      float64
+	threshold float64
 	st        scoreType
 }
 
 func priorityScore(cfg *BalanceConfig, scores []*score) (int, *score) {
 	var (
-		maxPriority int
+		maxPriority float64
 		idx         int
 		resultScore *score
 	)
@@ -39,8 +41,8 @@ func priorityScore(cfg *BalanceConfig, scores []*score) (int, *score) {
 		priority := score.diff
 		if score.threshold != noThreshold {
 			// If the from store score is close to threshold value, we should add the priority weight.
-			if score.threshold-score.from <= int(100*cfg.MaxDiffScoreFraction) {
-				priority += 10
+			if score.threshold-score.from <= cfg.MaxDiffScoreFraction {
+				priority += 0.1
 			}
 		}
 
@@ -53,13 +55,17 @@ func priorityScore(cfg *BalanceConfig, scores []*score) (int, *score) {
 	return idx, resultScore
 }
 
-func scoreThreshold(cfg *BalanceConfig, st scoreType) int {
+func scoreThreshold(cfg *BalanceConfig, st scoreType) float64 {
 	switch st {
 	case capacityScore:
-		return int(cfg.MaxCapacityUsedRatio * 100)
+		return cfg.MaxCapacityUsedRatio
 	default:
 		return noThreshold
 	}
+}
+
+func calculateDiffScore(from, to uint64) float64 {
+	return float64(from-to) / float64(from)
 }
 
 type scoreType byte
@@ -83,7 +89,9 @@ func (st scoreType) String() string {
 // Scorer is an interface to calculate the score.
 type Scorer interface {
 	// Score calculates the score of store.
-	Score(store *storeInfo) int
+	Score(store *storeInfo) float64
+	// DiffScore calculates the diff score and post diff score of two stores.
+	DiffScore(from *storeInfo, to *storeInfo) (float64, float64)
 }
 
 type leaderScorer struct {
@@ -93,8 +101,19 @@ func newLeaderScorer() *leaderScorer {
 	return &leaderScorer{}
 }
 
-func (ls *leaderScorer) Score(store *storeInfo) int {
-	return int(store.leaderRatio() * 100)
+func (ls *leaderScorer) Score(store *storeInfo) float64 {
+	return store.leaderRatio()
+}
+
+func (ls *leaderScorer) DiffScore(from *storeInfo, to *storeInfo) (float64, float64) {
+	fromCount := uint64(from.stats.LeaderRegionCount)
+	toCount := uint64(to.stats.LeaderRegionCount)
+	if fromCount <= 0 || fromCount <= toCount {
+		return 0.0, 0.0
+	}
+	diffScore := calculateDiffScore(fromCount, toCount)
+	postDiffScore := calculateDiffScore(fromCount-1, toCount+1)
+	return diffScore, postDiffScore
 }
 
 type capacityScorer struct {
@@ -104,8 +123,21 @@ func newCapacityScorer() *capacityScorer {
 	return &capacityScorer{}
 }
 
-func (cs *capacityScorer) Score(store *storeInfo) int {
-	return int(store.usedRatio() * 100)
+func (cs *capacityScorer) Score(store *storeInfo) float64 {
+	return store.usedRatio()
+}
+
+func (cs *capacityScorer) DiffScore(from *storeInfo, to *storeInfo) (float64, float64) {
+	// TODO: Get region size from store.
+	regionSize := uint64(64 * 1024 * 1024)
+	fromUsed := from.stats.Stats.GetCapacity() - from.stats.Stats.GetAvailable()
+	toUsed := to.stats.Stats.GetCapacity() - to.stats.Stats.GetAvailable()
+	if fromUsed <= regionSize || fromUsed <= toUsed {
+		return 0.0, 0.0
+	}
+	diffScore := calculateDiffScore(fromUsed, toUsed)
+	postDiffScore := calculateDiffScore(fromUsed-regionSize, toUsed+regionSize)
+	return diffScore, postDiffScore
 }
 
 func newScorer(st scoreType) Scorer {
@@ -127,16 +159,20 @@ func checkAndGetDiffScore(cluster *clusterInfo, oldPeer *metapb.Peer, newPeer *m
 		return nil, false
 	}
 
-	// TODO: we should check the diff score of pre-balance `from store` and post balance `to store`.
 	scorer := newScorer(st)
 	oldStoreScore := scorer.Score(oldStore)
 	newStoreScore := scorer.Score(newStore)
+	diffScore, postDiffScore := scorer.DiffScore(oldStore, newStore)
 
 	// Check whether the diff score is in MaxDiffScoreFraction range.
-	diffScore := oldStoreScore - newStoreScore
-	if diffScore <= int(float64(oldStoreScore)*cfg.MaxDiffScoreFraction) {
-		log.Debugf("check score failed - diff score is too small - score type: %v, old peer: %v, new peer: %v, old store score: %d, new store score: %d, diif score: %d",
+	if diffScore <= cfg.MaxDiffScoreFraction {
+		log.Debugf("check score failed - diff score is too small - score type: %v, old peer: %v, new peer: %v, old store score: %v, new store score: %v, diif score: %v",
 			st, oldPeer, newPeer, oldStoreScore, newStoreScore, diffScore)
+		return nil, false
+	}
+	if math.Abs(diffScore) <= math.Abs(postDiffScore) {
+		log.Debugf("check score failed - diff score is not bigger than post diff score - score type: %v, old peer: %v, new peer: %v, old store score: %v, new store score: %v, diff score: %v, post diff score: %v",
+			st, oldPeer, newPeer, oldStoreScore, newStoreScore, diffScore, postDiffScore)
 		return nil, false
 	}
 

@@ -35,7 +35,7 @@ type Balancer interface {
 }
 
 func selectFromStore(stores []*storeInfo, excluded map[uint64]struct{}, filters []Filter, st scoreType) *storeInfo {
-	score := 0
+	score := 0.0
 	scorer := newScorer(st)
 	if scorer == nil {
 		return nil
@@ -72,7 +72,7 @@ func selectFromStore(stores []*storeInfo, excluded map[uint64]struct{}, filters 
 }
 
 func selectToStore(stores []*storeInfo, excluded map[uint64]struct{}, filters []Filter, st scoreType) *storeInfo {
-	score := 0
+	score := 0.0
 	scorer := newScorer(st)
 	if scorer == nil {
 		return nil

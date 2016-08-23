@@ -249,7 +249,7 @@ func (bw *balancerWorker) storeScores(store *storeInfo) []int {
 	for _, balancer := range bw.balancers {
 		scorer := newScorer(balancer.ScoreType())
 		if scorer != nil {
-			scores = append(scores, scorer.Score(store))
+			scores = append(scores, int(scorer.Score(store)*100))
 		}
 	}
 
