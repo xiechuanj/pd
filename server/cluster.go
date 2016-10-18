@@ -560,12 +560,21 @@ func (c *RaftCluster) collectMetrics() {
 		}
 	}
 
+	// TODO: This may cause performance issue with million regions.
+	regionUnsafeCount := 0
+	for _, r := range cluster.regions.getRegions() {
+		if len(r.GetPeers()) < int(c.s.cfg.MaxPeerCount) {
+			regionUnsafeCount++
+		}
+	}
+
 	metrics := make(map[string]float64)
 	metrics["store_up_count"] = float64(storeUpCount)
 	metrics["store_down_count"] = float64(storeDownCount)
 	metrics["store_offline_count"] = float64(storeOfflineCount)
 	metrics["store_tombstone_count"] = float64(storeTombstoneCount)
 	metrics["region_total_count"] = float64(regionTotalCount)
+	metrics["region_unsafe_count"] = float64(regionUnsafeCount)
 	metrics["storage_size"] = float64(storageSize)
 	metrics["storage_capacity"] = float64(storageCapacity)
 	metrics["store_max_diff_used_ratio"] = maxUsedRatio - minUsedRatio
