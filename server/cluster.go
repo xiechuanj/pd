@@ -363,7 +363,7 @@ func (c *RaftCluster) GetRegionByID(regionID uint64) (*metapb.Region, *metapb.Pe
 }
 
 // GetRegion returns the region from cluster.
-func (c *RaftCluster) GetRegion(regionID uint64) *regionInfo {
+func (c *RaftCluster) getRegionByID(regionID uint64) *regionInfo {
 	return c.cachedCluster.getRegion(regionID)
 }
 
