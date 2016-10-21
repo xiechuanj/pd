@@ -399,3 +399,41 @@ func (c *clusterInfo) handleRegionHeartbeat(region *regionInfo) (bool, error) {
 	c.regions.setRegion(region)
 	return false, nil
 }
+
+func (c *clusterInfo) getRegion(regionID uint64) *regionInfo {
+	region, leader := c.regions.getRegionByID(regionID)
+	return newRegionInfo(region, leader)
+}
+
+func (c *clusterInfo) searchRegion(regionKey []byte) *regionInfo {
+	region, leader := c.regions.getRegion(regionKey)
+	return newRegionInfo(region, leader)
+}
+
+func (c *clusterInfo) updateRegion(region *regionInfo) {
+	c.regions.updateRegion(region.Region)
+}
+
+func (c *clusterInfo) randLeaderRegion(storeID uint64) *regionInfo {
+	region := c.regions.randLeaderRegion(storeID)
+	if region == nil {
+		return nil
+	}
+	leader := leaderPeer(region, storeID)
+	if leader == nil {
+		return nil
+	}
+	return newRegionInfo(region, leader)
+}
+
+func (c *clusterInfo) randFollowerRegion(storeID uint64) *regionInfo {
+	region, leader, _ := c.regions.randRegion(storeID)
+	if region == nil || leader == nil {
+		return nil
+	}
+	return newRegionInfo(region, leader)
+}
+
+func (c *clusterInfo) handleRegionHeartbeat(region *regionInfo) (*heartbeatResp, *pdpb.ChangePeer, error) {
+	return c.regions.heartbeat(region.Region, region.Leader)
+}
