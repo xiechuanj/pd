@@ -48,6 +48,7 @@ func (s *testStoresInfoSuite) Test(c *C) {
 		c.Assert(cache.getStore(i), DeepEquals, stores[i])
 		c.Assert(cache.getStoreCount(), Equals, int(i+1))
 	}
+	c.Assert(cache.getStoreCount(), Equals, int(n))
 
 	for _, store := range cache.getStores() {
 		c.Assert(store, DeepEquals, stores[store.GetId()])
