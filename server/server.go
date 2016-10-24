@@ -66,6 +66,9 @@ type Server struct {
 	// a unique ID.
 	idAlloc *idAllocator
 
+	// for kv operations.
+	kv *kv
+
 	// for raft cluster
 	clusterLock sync.RWMutex
 	cluster     *RaftCluster
@@ -101,6 +104,7 @@ func CreateServer(cfg *Config) (*Server, error) {
 	}
 
 	s.idAlloc = &idAllocator{s: s}
+	s.kv = newKV(s)
 	s.cluster = newRaftCluster(s, cfg.ClusterID)
 
 	return s, nil

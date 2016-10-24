@@ -14,14 +14,9 @@
 package server
 
 import (
-	"fmt"
-	"math"
-	"path"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/coreos/etcd/clientv3"
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
 	"github.com/pingcap/kvproto/pkg/metapb"
@@ -65,14 +60,13 @@ type RaftCluster struct {
 
 func newRaftCluster(s *Server, clusterID uint64) *RaftCluster {
 	return &RaftCluster{
-		s:           s,
-		running:     false,
-		clusterID:   clusterID,
-		clusterRoot: s.getClusterRootPath(),
+		s:         s,
+		running:   false,
+		clusterID: clusterID,
 	}
 }
 
-func (c *RaftCluster) start(meta metapb.Cluster) error {
+func (c *RaftCluster) start() error {
 	c.Lock()
 	defer c.Unlock()
 
@@ -81,19 +75,14 @@ func (c *RaftCluster) start(meta metapb.Cluster) error {
 		return nil
 	}
 
-	c.cachedCluster = newClusterInfo(c.s.idAlloc)
-	c.cachedCluster.setMeta(&meta)
-
-	// Cache all stores when start the cluster. We don't have
-	// many stores, so it is OK to cache them all.
-	// And we should use these cache for later ChangePeer too.
-	if err := c.cacheAllStores(); err != nil {
+	cache, err := c.s.kv.initCluster()
+	if err != nil {
 		return errors.Trace(err)
 	}
-
-	if err := c.cacheAllRegions(); err != nil {
-		return errors.Trace(err)
+	if cache == nil {
+		return nil
 	}
+	c.cachedCluster = cache
 
 	c.balancerWorker = newBalancerWorker(c.cachedCluster, &c.s.cfg.BalanceCfg)
 	c.balancerWorker.run()
@@ -140,10 +129,6 @@ func (s *Server) SetBalanceConfig(cfg BalanceConfig) {
 	s.cfg.setBalanceConfig(cfg)
 }
 
-func (s *Server) getClusterRootPath() string {
-	return path.Join(s.rootPath, "raft")
-}
-
 // GetRaftCluster gets raft cluster.
 // If cluster has not been bootstrapped, return nil.
 func (s *Server) GetRaftCluster() *RaftCluster {
@@ -159,36 +144,11 @@ func (s *Server) createRaftCluster() error {
 		return nil
 	}
 
-	value, err := getValue(s.client, s.getClusterRootPath())
-	if err != nil {
-		return errors.Trace(err)
-	}
-	if value == nil {
-		return nil
-	}
-
-	clusterMeta := metapb.Cluster{}
-	if err = clusterMeta.Unmarshal(value); err != nil {
-		return errors.Trace(err)
-	}
-
-	if err = s.cluster.start(clusterMeta); err != nil {
+	if err := s.cluster.start(); err != nil {
 		return errors.Trace(err)
 	}
 
 	return nil
-}
-
-func makeStoreKey(clusterRootPath string, storeID uint64) string {
-	return strings.Join([]string{clusterRootPath, "s", fmt.Sprintf("%020d", storeID)}, "/")
-}
-
-func makeRegionKey(clusterRootPath string, regionID uint64) string {
-	return strings.Join([]string{clusterRootPath, "r", fmt.Sprintf("%020d", regionID)}, "/")
-}
-
-func makeStoreKeyPrefix(clusterRootPath string) string {
-	return strings.Join([]string{clusterRootPath, "s", ""}, "/")
 }
 
 func checkBootstrapRequest(clusterID uint64, req *pdpb.BootstrapRequest) error {
@@ -236,113 +196,22 @@ func (s *Server) bootstrapCluster(req *pdpb.BootstrapRequest) (*pdpb.Response, e
 		return nil, errors.Trace(err)
 	}
 
-	clusterMeta := metapb.Cluster{
-		Id:           clusterID,
-		MaxPeerCount: uint32(s.cfg.MaxPeerCount),
-	}
-
-	// Set cluster meta
-	clusterValue, err := clusterMeta.Marshal()
-	if err != nil {
+	if err := s.kv.bootstrapCluster(req.GetStore(), req.GetRegion()); err != nil {
+		if errors.Cause(err) == errBootstrapped {
+			return newBootstrappedError(), nil
+		}
 		return nil, errors.Trace(err)
-	}
-	clusterRootPath := s.getClusterRootPath()
-
-	var ops []clientv3.Op
-	ops = append(ops, clientv3.OpPut(clusterRootPath, string(clusterValue)))
-
-	// Set store meta
-	storeMeta := req.GetStore()
-	storePath := makeStoreKey(clusterRootPath, storeMeta.GetId())
-	storeValue, err := storeMeta.Marshal()
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-	ops = append(ops, clientv3.OpPut(storePath, string(storeValue)))
-
-	regionValue, err := req.GetRegion().Marshal()
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-
-	// Set region meta with region id.
-	regionPath := makeRegionKey(clusterRootPath, req.GetRegion().GetId())
-	ops = append(ops, clientv3.OpPut(regionPath, string(regionValue)))
-
-	// TODO: we must figure out a better way to handle bootstrap failed, maybe intervene manually.
-	bootstrapCmp := clientv3.Compare(clientv3.CreateRevision(clusterRootPath), "=", 0)
-	resp, err := s.txn().If(bootstrapCmp).Then(ops...).Commit()
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-	if !resp.Succeeded {
-		log.Warnf("cluster %d already bootstrapped", clusterID)
-		return newBootstrappedError(), nil
 	}
 
 	log.Infof("bootstrap cluster %d ok", clusterID)
 
-	if err = s.cluster.start(clusterMeta); err != nil {
+	if err := s.cluster.start(); err != nil {
 		return nil, errors.Trace(err)
 	}
 
 	return &pdpb.Response{
 		Bootstrap: &pdpb.BootstrapResponse{},
 	}, nil
-}
-
-func (c *RaftCluster) cacheAllStores() error {
-	start := time.Now()
-
-	key := makeStoreKeyPrefix(c.clusterRoot)
-	resp, err := kvGet(c.s.client, key, clientv3.WithPrefix())
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	for _, kv := range resp.Kvs {
-		store := &metapb.Store{}
-		if err = store.Unmarshal(kv.Value); err != nil {
-			return errors.Trace(err)
-		}
-
-		c.cachedCluster.setStore(newStoreInfo(store))
-	}
-	log.Infof("cache all %d stores cost %s", len(resp.Kvs), time.Now().Sub(start))
-	return nil
-}
-
-func (c *RaftCluster) cacheAllRegions() error {
-	start := time.Now()
-
-	nextID := uint64(0)
-	endRegionKey := makeRegionKey(c.clusterRoot, math.MaxUint64)
-
-	for {
-		key := makeRegionKey(c.clusterRoot, nextID)
-		resp, err := kvGet(c.s.client, key, clientv3.WithRange(endRegionKey))
-		if err != nil {
-			return errors.Trace(err)
-		}
-
-		if len(resp.Kvs) == 0 {
-			// No more data
-			break
-		}
-
-		for _, kv := range resp.Kvs {
-			region := &metapb.Region{}
-			if err = region.Unmarshal(kv.Value); err != nil {
-				return errors.Trace(err)
-			}
-
-			nextID = region.GetId() + 1
-			c.cachedCluster.setRegion(newRegionInfo(region, nil))
-		}
-	}
-
-	log.Infof("cache all %d regions cost %s", c.cachedCluster.getRegionCount(), time.Now().Sub(start))
-	return nil
 }
 
 func (c *RaftCluster) getRegion(regionKey []byte) (*metapb.Region, *metapb.Peer) {
@@ -424,19 +293,8 @@ func (c *RaftCluster) putStore(store *metapb.Store) error {
 }
 
 func (c *RaftCluster) saveStore(store *metapb.Store) error {
-	storeValue, err := store.Marshal()
-	if err != nil {
+	if err := c.s.kv.saveStore(store); err != nil {
 		return errors.Trace(err)
-	}
-
-	storePath := makeStoreKey(c.clusterRoot, store.GetId())
-
-	resp, err := c.s.leaderTxn().Then(clientv3.OpPut(storePath, string(storeValue))).Commit()
-	if err != nil {
-		return errors.Trace(err)
-	}
-	if !resp.Succeeded {
-		return errors.Errorf("save store %v fail", store)
 	}
 
 	c.cachedCluster.setStore(newStoreInfo(store))
@@ -608,21 +466,11 @@ func (c *RaftCluster) putConfig(meta *metapb.Cluster) error {
 		return errors.Errorf("invalid cluster %v, mismatch cluster id %d", meta, c.clusterID)
 	}
 
-	metaValue, err := meta.Marshal()
-	if err != nil {
+	if err := c.s.kv.saveCluster(meta); err != nil {
 		return errors.Trace(err)
-	}
-
-	resp, err := c.s.leaderTxn().Then(clientv3.OpPut(c.clusterRoot, string(metaValue))).Commit()
-	if err != nil {
-		return errors.Trace(err)
-	}
-	if !resp.Succeeded {
-		return errors.Errorf("put cluster meta %v error", meta)
 	}
 
 	c.cachedCluster.setMeta(meta)
-
 	return nil
 }
 

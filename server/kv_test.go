@@ -1,0 +1,138 @@
+// Copyright 2016 PingCAP, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package server
+
+import (
+	. "github.com/pingcap/check"
+	"github.com/pingcap/kvproto/pkg/metapb"
+)
+
+var _ = Suite(&testKVSuite{})
+
+type testKVSuite struct {
+	server  *Server
+	cleanup cleanUpFunc
+}
+
+func (s *testKVSuite) SetUpTest(c *C) {
+	s.server, s.cleanup = newTestServer(c)
+	go s.server.Run()
+	mustWaitLeader(c, []*Server{s.server})
+}
+
+func (s *testKVSuite) TearDownTest(c *C) {
+	s.cleanup()
+}
+
+func (s *testKVSuite) TestBasic(c *C) {
+	kv := newKV(s.server)
+
+	c.Assert(kv.storePath(123), Equals, "/pd/0/raft/s/00000000000000000123")
+	c.Assert(kv.regionPath(123), Equals, "/pd/0/raft/r/00000000000000000123")
+
+	cluster := &metapb.Cluster{Id: 123}
+	ok, err := kv.loadCluster(cluster)
+	c.Assert(ok, IsFalse)
+	c.Assert(err, IsNil)
+	c.Assert(kv.saveCluster(cluster), IsNil)
+	newCluster := &metapb.Cluster{}
+	ok, err = kv.loadCluster(newCluster)
+	c.Assert(ok, IsTrue)
+	c.Assert(err, IsNil)
+	c.Assert(newCluster, DeepEquals, cluster)
+
+	store := &metapb.Store{Id: 123}
+	ok, err = kv.loadStore(123, store)
+	c.Assert(ok, IsFalse)
+	c.Assert(err, IsNil)
+	c.Assert(kv.saveStore(store), IsNil)
+	newStore := &metapb.Store{}
+	ok, err = kv.loadStore(123, newStore)
+	c.Assert(ok, IsTrue)
+	c.Assert(err, IsNil)
+	c.Assert(newStore, DeepEquals, store)
+
+	region := &metapb.Region{Id: 123}
+	ok, err = kv.loadRegion(123, region)
+	c.Assert(ok, IsFalse)
+	c.Assert(err, IsNil)
+	c.Assert(kv.saveRegion(region), IsNil)
+	newRegion := &metapb.Region{}
+	ok, err = kv.loadRegion(123, newRegion)
+	c.Assert(ok, IsTrue)
+	c.Assert(err, IsNil)
+	c.Assert(newRegion, DeepEquals, region)
+}
+
+func (s *testKVSuite) TestBootstrap(c *C) {
+	kv := newKV(s.server)
+
+	store := &metapb.Store{Id: 123}
+	region := &metapb.Region{Id: 123}
+	c.Assert(kv.bootstrapCluster(store, region), IsNil)
+	c.Assert(kv.bootstrapCluster(store, region), NotNil)
+
+	cache, err := kv.initCluster()
+	c.Assert(err, IsNil)
+	c.Assert(cache.getStoreCount(), Equals, 1)
+	c.Assert(cache.getStore(store.GetId()).Store, DeepEquals, store)
+	c.Assert(cache.getRegionCount(), Equals, 1)
+	c.Assert(cache.getRegion(region.GetId()).Region, DeepEquals, region)
+}
+
+func (s *testKVSuite) TestLoadStores(c *C) {
+	kv := newKV(s.server)
+	cache := newClusterInfo(newMockIDAllocator())
+
+	n := uint64(10)
+	stores := make([]*metapb.Store, 0, n)
+	for i := uint64(0); i < n; i++ {
+		store := &metapb.Store{Id: i}
+		stores = append(stores, store)
+	}
+
+	for _, store := range stores {
+		c.Assert(kv.saveStore(store), IsNil)
+	}
+
+	c.Assert(kv.loadStores(cache, 2), IsNil)
+
+	c.Assert(cache.getStoreCount(), Equals, int(n))
+	for _, store := range cache.getMetaStores() {
+		c.Assert(store, DeepEquals, stores[store.GetId()])
+	}
+}
+
+func (s *testKVSuite) TestLoadRegions(c *C) {
+	kv := newKV(s.server)
+	cache := newClusterInfo(newMockIDAllocator())
+
+	n := uint64(10)
+	regions := make([]*metapb.Region, 0, n)
+	for i := uint64(0); i < n; i++ {
+		region := &metapb.Region{Id: i}
+		regions = append(regions, region)
+	}
+
+	for _, region := range regions {
+		c.Assert(kv.saveRegion(region), IsNil)
+	}
+
+	c.Assert(kv.loadRegions(cache, 2), IsNil)
+
+	c.Assert(cache.getRegionCount(), Equals, int(n))
+	for _, region := range cache.getMetaRegions() {
+		c.Assert(region, DeepEquals, regions[region.GetId()])
+	}
+}
