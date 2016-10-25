@@ -278,6 +278,23 @@ func (s *testClusterInfoSuite) TestRegionHeartbeat(c *C) {
 		c.Assert(err, NotNil)
 		checkRegions(c, cache.regions, regions[0:i+1])
 	}
+
+	regionCounts := make(map[uint64]int)
+	for _, region := range regions {
+		for _, peer := range region.GetPeers() {
+			regionCounts[peer.GetStoreId()]++
+		}
+	}
+	for id, count := range regionCounts {
+		c.Assert(cache.getStoreRegionCount(id), Equals, count)
+	}
+
+	for _, region := range cache.getRegions() {
+		checkRegion(c, region, regions[region.GetId()])
+	}
+	for _, region := range cache.getMetaRegions() {
+		c.Assert(region, DeepEquals, regions[region.GetId()].Region)
+	}
 }
 
 func heartbeatRegions(c *C, cache *clusterInfo, regions []*metapb.Region) {
