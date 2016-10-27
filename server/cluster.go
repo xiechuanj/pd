@@ -337,7 +337,7 @@ func (c *RaftCluster) cacheAllRegions() error {
 			}
 
 			nextID = region.GetId() + 1
-			c.cachedCluster.addRegion(newRegionInfo(region, nil))
+			c.cachedCluster.setRegion(newRegionInfo(region, nil))
 		}
 	}
 

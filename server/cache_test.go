@@ -108,12 +108,12 @@ func (s *testRegionsInfoSuite) Test(c *C) {
 
 		// Update leader to peer np-1.
 		region.Leader = region.Peers[np-1]
-		cache.updateRegion(region)
+		cache.setRegion(region)
 		checkRegion(c, cache.getRegion(i), region)
 		checkRegion(c, cache.searchRegion(regionKey), region)
 		checkRegions(c, cache, regions[0:(i+1)])
 
-		cache.removeRegion(region.GetId())
+		cache.removeRegion(region)
 		c.Assert(cache.getRegion(i), IsNil)
 		c.Assert(cache.searchRegion(regionKey), IsNil)
 		checkRegions(c, cache, regions[0:i])
@@ -189,7 +189,7 @@ func (s *testClusterInfoSuite) TestStoreHeartbeat(c *C) {
 	regions := newTestRegions(n, np)
 
 	for _, region := range regions {
-		cache.addRegion(region)
+		cache.setRegion(region)
 	}
 	c.Assert(cache.getRegionCount(), Equals, int(n))
 

@@ -20,7 +20,6 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/juju/errors"
-	"github.com/ngaut/log"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/kvproto/pkg/pdpb"
 )
@@ -64,16 +63,16 @@ func newStoresInfo() *storesInfo {
 	}
 }
 
+func (s *storesInfo) setStore(store *storeInfo) {
+	s.stores[store.GetId()] = store
+}
+
 func (s *storesInfo) getStore(storeID uint64) *storeInfo {
 	store, ok := s.stores[storeID]
 	if !ok {
 		return nil
 	}
 	return store.clone()
-}
-
-func (s *storesInfo) setStore(store *storeInfo) {
-	s.stores[store.GetId()] = store
 }
 
 func (s *storesInfo) getStores() []*storeInfo {
@@ -112,6 +111,13 @@ func newRegionsInfo() *regionsInfo {
 	}
 }
 
+func (r *regionsInfo) setRegion(region *regionInfo) {
+	if origin, ok := r.regions[region.GetId()]; ok {
+		r.removeRegion(origin)
+	}
+	r.addRegion(region)
+}
+
 func (r *regionsInfo) getRegion(regionID uint64) *regionInfo {
 	region, ok := r.regions[regionID]
 	if !ok {
@@ -121,12 +127,7 @@ func (r *regionsInfo) getRegion(regionID uint64) *regionInfo {
 }
 
 func (r *regionsInfo) addRegion(region *regionInfo) {
-	_, ok := r.regions[region.GetId()]
-	if ok {
-		log.Panicf("add existed region: %v", region.Region)
-	}
-
-	// Update to tree and regions.
+	// Add to tree and regions.
 	r.tree.update(region.Region)
 	r.regions[region.GetId()] = region
 
@@ -134,7 +135,7 @@ func (r *regionsInfo) addRegion(region *regionInfo) {
 		return
 	}
 
-	// Update to leaders and followers.
+	// Add to leaders and followers.
 	for _, peer := range region.GetPeers() {
 		storeID := peer.GetStoreId()
 		if peer.GetId() == region.Leader.GetId() {
@@ -157,12 +158,7 @@ func (r *regionsInfo) addRegion(region *regionInfo) {
 	}
 }
 
-func (r *regionsInfo) removeRegion(regionID uint64) {
-	region, ok := r.regions[regionID]
-	if !ok {
-		log.Panicf("remove non exist region: %v", regionID)
-	}
-
+func (r *regionsInfo) removeRegion(region *regionInfo) {
 	// Remove from tree and regions.
 	r.tree.remove(region.Region)
 	delete(r.regions, region.GetId())
@@ -173,11 +169,6 @@ func (r *regionsInfo) removeRegion(regionID uint64) {
 		delete(r.leaders[storeID], region.GetId())
 		delete(r.followers[storeID], region.GetId())
 	}
-}
-
-func (r *regionsInfo) updateRegion(region *regionInfo) {
-	r.removeRegion(region.GetId())
-	r.addRegion(region)
 }
 
 func (r *regionsInfo) searchRegion(regionKey []byte) *regionInfo {
@@ -257,28 +248,28 @@ func newClusterInfo(idAlloc IDAllocator) *clusterInfo {
 	}
 }
 
-func (c *clusterInfo) getMeta() *metapb.Cluster {
-	c.RLock()
-	defer c.RUnlock()
-	return proto.Clone(c.meta).(*metapb.Cluster)
-}
-
 func (c *clusterInfo) setMeta(meta *metapb.Cluster) {
 	c.Lock()
 	defer c.Unlock()
 	c.meta = meta
 }
 
-func (c *clusterInfo) getStore(storeID uint64) *storeInfo {
+func (c *clusterInfo) getMeta() *metapb.Cluster {
 	c.RLock()
 	defer c.RUnlock()
-	return c.stores.getStore(storeID)
+	return proto.Clone(c.meta).(*metapb.Cluster)
 }
 
 func (c *clusterInfo) setStore(store *storeInfo) {
 	c.Lock()
 	defer c.Unlock()
 	c.stores.setStore(store.clone())
+}
+
+func (c *clusterInfo) getStore(storeID uint64) *storeInfo {
+	c.RLock()
+	defer c.RUnlock()
+	return c.stores.getStore(storeID)
 }
 
 func (c *clusterInfo) getStores() []*storeInfo {
@@ -299,6 +290,12 @@ func (c *clusterInfo) getStoreCount() int {
 	return c.stores.getStoreCount()
 }
 
+func (c *clusterInfo) setRegion(region *regionInfo) {
+	c.Lock()
+	defer c.Unlock()
+	c.regions.setRegion(region.clone())
+}
+
 func (c *clusterInfo) getRegion(regionID uint64) *regionInfo {
 	c.RLock()
 	defer c.RUnlock()
@@ -309,18 +306,6 @@ func (c *clusterInfo) searchRegion(regionKey []byte) *regionInfo {
 	c.RLock()
 	defer c.RUnlock()
 	return c.regions.searchRegion(regionKey)
-}
-
-func (c *clusterInfo) addRegion(region *regionInfo) {
-	c.Lock()
-	defer c.Unlock()
-	c.regions.addRegion(region.clone())
-}
-
-func (c *clusterInfo) updateRegion(region *regionInfo) {
-	c.Lock()
-	defer c.Unlock()
-	c.regions.updateRegion(region.clone())
 }
 
 func (c *clusterInfo) getRegions() []*regionInfo {
@@ -377,7 +362,7 @@ func (c *clusterInfo) handleStoreHeartbeat(stats *pdpb.StoreStats) error {
 		return errors.Trace(errStoreNotFound(storeID))
 	}
 
-	store.stats.StoreStats = proto.Clone(stats).(*pdpb.StoreStats)
+	store.stats.StoreStats = stats
 	store.stats.LastHeartbeatTS = time.Now()
 	store.stats.TotalRegionCount = c.regions.getRegionCount()
 	store.stats.LeaderRegionCount = c.regions.getStoreLeaderCount(storeID)
@@ -393,12 +378,11 @@ func (c *clusterInfo) handleRegionHeartbeat(region *regionInfo) (bool, error) {
 	c.Lock()
 	defer c.Unlock()
 
-	region = region.clone()
 	origin := c.regions.getRegion(region.GetId())
 
 	// Region does not exist, add it.
 	if origin == nil {
-		c.regions.addRegion(region)
+		c.regions.setRegion(region)
 		return true, nil
 	}
 
@@ -407,16 +391,16 @@ func (c *clusterInfo) handleRegionHeartbeat(region *regionInfo) (bool, error) {
 
 	// Region meta is stale, return an error.
 	if r.GetVersion() < o.GetVersion() || r.GetConfVer() < o.GetConfVer() {
-		return false, errors.Trace(errRegionEpochIsStale(region.GetId()))
+		return false, errors.Trace(errRegionIsStale(region.Region, origin.Region))
 	}
 
 	// Region meta is updated, update region and return true.
 	if r.GetVersion() > o.GetVersion() || r.GetConfVer() > o.GetConfVer() {
-		c.regions.updateRegion(region)
+		c.regions.setRegion(region)
 		return true, nil
 	}
 
 	// Region meta is the same, update region and return false.
-	c.regions.updateRegion(region)
+	c.regions.setRegion(region)
 	return false, nil
 }
