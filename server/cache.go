@@ -36,6 +36,12 @@ var (
 	errRegionIsStale = func(region *metapb.Region, origin *metapb.Region) error {
 		return errors.Errorf("region is stale: region %v origin %v", region, origin)
 	}
+	errRegionNotFound = func(regionID uint64) error {
+		return errors.Errorf("region not found: %v", regionID)
+	}
+	errRegionIsStale = func(region *metapb.Region, origin *metapb.Region) error {
+		return errors.Errorf("region is stale: region %v origin %v", region, origin)
+	}
 )
 
 func checkStaleRegion(origin *metapb.Region, region *metapb.Region) error {
