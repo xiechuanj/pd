@@ -34,12 +34,6 @@ var (
 	errRegionIsStale = func(region *metapb.Region, origin *metapb.Region) error {
 		return errors.Errorf("region is stale: region %v origin %v", region, origin)
 	}
-	errRegionNotFound = func(regionID uint64) error {
-		return errors.Errorf("region not found: %v", regionID)
-	}
-	errRegionIsStale = func(region *metapb.Region, origin *metapb.Region) error {
-		return errors.Errorf("region is stale: region %v origin %v", region, origin)
-	}
 )
 
 func checkStaleRegion(origin *metapb.Region, region *metapb.Region) error {
@@ -63,16 +57,16 @@ func newStoresInfo() *storesInfo {
 	}
 }
 
-func (s *storesInfo) setStore(store *storeInfo) {
-	s.stores[store.GetId()] = store
-}
-
 func (s *storesInfo) getStore(storeID uint64) *storeInfo {
 	store, ok := s.stores[storeID]
 	if !ok {
 		return nil
 	}
 	return store.clone()
+}
+
+func (s *storesInfo) setStore(store *storeInfo) {
+	s.stores[store.GetId()] = store
 }
 
 func (s *storesInfo) getStores() []*storeInfo {
@@ -111,19 +105,19 @@ func newRegionsInfo() *regionsInfo {
 	}
 }
 
-func (r *regionsInfo) setRegion(region *regionInfo) {
-	if origin, ok := r.regions[region.GetId()]; ok {
-		r.removeRegion(origin)
-	}
-	r.addRegion(region)
-}
-
 func (r *regionsInfo) getRegion(regionID uint64) *regionInfo {
 	region, ok := r.regions[regionID]
 	if !ok {
 		return nil
 	}
 	return region.clone()
+}
+
+func (r *regionsInfo) setRegion(region *regionInfo) {
+	if origin, ok := r.regions[region.GetId()]; ok {
+		r.removeRegion(origin)
+	}
+	r.addRegion(region)
 }
 
 func (r *regionsInfo) addRegion(region *regionInfo) {
@@ -248,28 +242,28 @@ func newClusterInfo(idAlloc IDAllocator) *clusterInfo {
 	}
 }
 
-func (c *clusterInfo) setMeta(meta *metapb.Cluster) {
-	c.Lock()
-	defer c.Unlock()
-	c.meta = meta
-}
-
 func (c *clusterInfo) getMeta() *metapb.Cluster {
 	c.RLock()
 	defer c.RUnlock()
 	return proto.Clone(c.meta).(*metapb.Cluster)
 }
 
-func (c *clusterInfo) setStore(store *storeInfo) {
+func (c *clusterInfo) setMeta(meta *metapb.Cluster) {
 	c.Lock()
 	defer c.Unlock()
-	c.stores.setStore(store.clone())
+	c.meta = meta
 }
 
 func (c *clusterInfo) getStore(storeID uint64) *storeInfo {
 	c.RLock()
 	defer c.RUnlock()
 	return c.stores.getStore(storeID)
+}
+
+func (c *clusterInfo) setStore(store *storeInfo) {
+	c.Lock()
+	defer c.Unlock()
+	c.stores.setStore(store.clone())
 }
 
 func (c *clusterInfo) getStores() []*storeInfo {
@@ -290,12 +284,6 @@ func (c *clusterInfo) getStoreCount() int {
 	return c.stores.getStoreCount()
 }
 
-func (c *clusterInfo) setRegion(region *regionInfo) {
-	c.Lock()
-	defer c.Unlock()
-	c.regions.setRegion(region.clone())
-}
-
 func (c *clusterInfo) getRegion(regionID uint64) *regionInfo {
 	c.RLock()
 	defer c.RUnlock()
@@ -306,6 +294,12 @@ func (c *clusterInfo) searchRegion(regionKey []byte) *regionInfo {
 	c.RLock()
 	defer c.RUnlock()
 	return c.regions.searchRegion(regionKey)
+}
+
+func (c *clusterInfo) setRegion(region *regionInfo) {
+	c.Lock()
+	defer c.Unlock()
+	c.regions.setRegion(region.clone())
 }
 
 func (c *clusterInfo) getRegions() []*regionInfo {
@@ -378,6 +372,7 @@ func (c *clusterInfo) handleRegionHeartbeat(region *regionInfo) (bool, error) {
 	c.Lock()
 	defer c.Unlock()
 
+	region = region.clone()
 	origin := c.regions.getRegion(region.GetId())
 
 	// Region does not exist, add it.
