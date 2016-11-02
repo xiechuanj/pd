@@ -102,8 +102,11 @@ func (kv *kv) bootstrapCluster(store *metapb.Store, region *metapb.Region) error
 
 func (kv *kv) initCluster() (*clusterInfo, error) {
 	log.Info("load cluster")
-	cluster := &metapb.Cluster{}
-	ok, err := kv.loadCluster(cluster)
+
+	cache := newClusterInfo(kv.s.idAlloc)
+	cache.meta = &metapb.Cluster{}
+
+	ok, err := kv.loadMeta(cache.meta)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -111,17 +114,14 @@ func (kv *kv) initCluster() (*clusterInfo, error) {
 		return nil, nil
 	}
 
-	cache := newClusterInfo(kv.s.idAlloc)
-	cache.setMeta(cluster)
-
 	start := time.Now()
-	if err := kv.loadStores(cache, kvRangeLimit); err != nil {
+	if err := kv.loadStores(cache.stores, kvRangeLimit); err != nil {
 		return nil, errors.Trace(err)
 	}
 	log.Infof("load %v stores cost %v", cache.getStoreCount(), time.Since(start))
 
 	start = time.Now()
-	if err := kv.loadRegions(cache, kvRangeLimit); err != nil {
+	if err := kv.loadRegions(cache.regions, kvRangeLimit); err != nil {
 		return nil, errors.Trace(err)
 	}
 	log.Infof("load %v regions cost %v", cache.getRegionCount(), time.Since(start))
@@ -129,14 +129,11 @@ func (kv *kv) initCluster() (*clusterInfo, error) {
 	return cache, nil
 }
 
-func (kv *kv) loadStores(cache *clusterInfo, rangeLimit int64) error {
+func (kv *kv) loadStores(stores *storesInfo, rangeLimit int64) error {
 	nextID := uint64(0)
 	endStore := kv.storePath(math.MaxUint64)
 	withRange := clientv3.WithRange(endStore)
 	withLimit := clientv3.WithLimit(rangeLimit)
-
-	cache.Lock()
-	defer cache.Unlock()
 
 	for {
 		key := kv.storePath(nextID)
@@ -155,19 +152,16 @@ func (kv *kv) loadStores(cache *clusterInfo, rangeLimit int64) error {
 			}
 
 			nextID = store.GetId() + 1
-			cache.stores.setStore(newStoreInfo(store))
+			stores.setStore(newStoreInfo(store))
 		}
 	}
 }
 
-func (kv *kv) loadRegions(cache *clusterInfo, rangeLimit int64) error {
+func (kv *kv) loadRegions(regions *regionsInfo, rangeLimit int64) error {
 	nextID := uint64(0)
 	endRegion := kv.regionPath(math.MaxUint64)
 	withRange := clientv3.WithRange(endRegion)
 	withLimit := clientv3.WithLimit(rangeLimit)
-
-	cache.Lock()
-	defer cache.Unlock()
 
 	for {
 		key := kv.regionPath(nextID)
@@ -186,41 +180,33 @@ func (kv *kv) loadRegions(cache *clusterInfo, rangeLimit int64) error {
 			}
 
 			nextID = region.GetId() + 1
-			cache.regions.addRegion(newRegionInfo(region, nil))
+			regions.setRegion(newRegionInfo(region, nil))
 		}
 	}
 }
 
-func (kv *kv) saveCluster(cluster *metapb.Cluster) error {
-	return kv.saveProto(kv.clusterPath, cluster)
+func (kv *kv) loadMeta(meta *metapb.Cluster) (bool, error) {
+	return kv.loadProto(kv.clusterPath, meta)
 }
 
-func (kv *kv) loadCluster(cluster *metapb.Cluster) (bool, error) {
-	return kv.loadProto(kv.clusterPath, cluster)
-}
-
-func (kv *kv) saveStore(store *metapb.Store) error {
-	return kv.saveProto(kv.storePath(store.GetId()), store)
+func (kv *kv) saveMeta(meta *metapb.Cluster) error {
+	return kv.saveProto(kv.clusterPath, meta)
 }
 
 func (kv *kv) loadStore(storeID uint64, store *metapb.Store) (bool, error) {
 	return kv.loadProto(kv.storePath(storeID), store)
 }
 
-func (kv *kv) saveRegion(region *metapb.Region) error {
-	return kv.saveProto(kv.regionPath(region.GetId()), region)
+func (kv *kv) saveStore(store *metapb.Store) error {
+	return kv.saveProto(kv.storePath(store.GetId()), store)
 }
 
 func (kv *kv) loadRegion(regionID uint64, region *metapb.Region) (bool, error) {
 	return kv.loadProto(kv.regionPath(regionID), region)
 }
 
-func (kv *kv) saveProto(key string, msg proto.Message) error {
-	value, err := proto.Marshal(msg)
-	if err != nil {
-		return errors.Trace(err)
-	}
-	return kv.save(key, string(value))
+func (kv *kv) saveRegion(region *metapb.Region) error {
+	return kv.saveProto(kv.regionPath(region.GetId()), region)
 }
 
 func (kv *kv) loadProto(key string, msg proto.Message) (bool, error) {
@@ -234,15 +220,12 @@ func (kv *kv) loadProto(key string, msg proto.Message) (bool, error) {
 	return true, proto.Unmarshal(value, msg)
 }
 
-func (kv *kv) save(key, value string) error {
-	resp, err := kv.txn().Then(clientv3.OpPut(key, string(value))).Commit()
+func (kv *kv) saveProto(key string, msg proto.Message) error {
+	value, err := proto.Marshal(msg)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	if !resp.Succeeded {
-		return errors.Trace(errTxnFailed)
-	}
-	return nil
+	return kv.save(key, string(value))
 }
 
 func (kv *kv) load(key string) ([]byte, error) {
@@ -256,6 +239,17 @@ func (kv *kv) load(key string) ([]byte, error) {
 		return nil, errors.Errorf("load more than one kvs: key %v kvs %v", key, n)
 	}
 	return resp.Kvs[0].Value, nil
+}
+
+func (kv *kv) save(key, value string) error {
+	resp, err := kv.txn().Then(clientv3.OpPut(key, string(value))).Commit()
+	if err != nil {
+		return errors.Trace(err)
+	}
+	if !resp.Succeeded {
+		return errors.Trace(errTxnFailed)
+	}
+	return nil
 }
 
 func kvGet(c *clientv3.Client, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {

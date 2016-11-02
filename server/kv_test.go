@@ -41,16 +41,16 @@ func (s *testKVSuite) TestBasic(c *C) {
 	c.Assert(kv.storePath(123), Equals, "/pd/0/raft/s/00000000000000000123")
 	c.Assert(kv.regionPath(123), Equals, "/pd/0/raft/r/00000000000000000123")
 
-	cluster := &metapb.Cluster{Id: 123}
-	ok, err := kv.loadCluster(cluster)
+	meta := &metapb.Cluster{Id: 123}
+	ok, err := kv.loadMeta(meta)
 	c.Assert(ok, IsFalse)
 	c.Assert(err, IsNil)
-	c.Assert(kv.saveCluster(cluster), IsNil)
-	newCluster := &metapb.Cluster{}
-	ok, err = kv.loadCluster(newCluster)
+	c.Assert(kv.saveMeta(meta), IsNil)
+	newMeta := &metapb.Cluster{}
+	ok, err = kv.loadMeta(newMeta)
 	c.Assert(ok, IsTrue)
 	c.Assert(err, IsNil)
-	c.Assert(newCluster, DeepEquals, cluster)
+	c.Assert(newMeta, DeepEquals, meta)
 
 	store := &metapb.Store{Id: 123}
 	ok, err = kv.loadStore(123, store)
@@ -93,7 +93,7 @@ func (s *testKVSuite) TestBootstrap(c *C) {
 
 func (s *testKVSuite) TestLoadStores(c *C) {
 	kv := newKV(s.server)
-	cache := newClusterInfo(newMockIDAllocator())
+	cache := newStoresInfo()
 
 	n := uint64(10)
 	stores := make([]*metapb.Store, 0, n)
@@ -116,7 +116,7 @@ func (s *testKVSuite) TestLoadStores(c *C) {
 
 func (s *testKVSuite) TestLoadRegions(c *C) {
 	kv := newKV(s.server)
-	cache := newClusterInfo(newMockIDAllocator())
+	cache := newRegionsInfo()
 
 	n := uint64(10)
 	regions := make([]*metapb.Region, 0, n)

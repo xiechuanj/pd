@@ -466,7 +466,7 @@ func (c *RaftCluster) putConfig(meta *metapb.Cluster) error {
 		return errors.Errorf("invalid cluster %v, mismatch cluster id %d", meta, c.clusterID)
 	}
 
-	if err := c.s.kv.saveCluster(meta); err != nil {
+	if err := c.s.kv.saveMeta(meta); err != nil {
 		return errors.Trace(err)
 	}
 
