@@ -30,6 +30,13 @@ func TestServer(t *testing.T) {
 	TestingT(t)
 }
 
+func mustRunTestServer(c *C) (*Server, cleanUpFunc) {
+	server, cleanup := newTestServer(c)
+	go server.Run()
+	mustWaitLeader(c, []*Server{server})
+	return server, cleanup
+}
+
 type cleanupFunc func()
 
 func newTestServer(c *C) (*Server, cleanUpFunc) {

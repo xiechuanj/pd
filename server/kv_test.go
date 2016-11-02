@@ -83,7 +83,9 @@ func (s *testKVSuite) TestBootstrap(c *C) {
 	c.Assert(kv.bootstrapCluster(store, region), IsNil)
 	c.Assert(kv.bootstrapCluster(store, region), NotNil)
 
-	cache, err := kv.initCluster()
+	cache := newClusterInfo(newMockIDAllocator())
+	bootstrapped, err := cache.initCache(kv)
+	c.Assert(bootstrapped, IsTrue)
 	c.Assert(err, IsNil)
 	c.Assert(cache.getStoreCount(), Equals, 1)
 	c.Assert(cache.getStore(store.GetId()).Store, DeepEquals, store)

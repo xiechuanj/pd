@@ -61,15 +61,15 @@ func (kv *kv) regionPath(regionID uint64) string {
 }
 
 func (kv *kv) bootstrapCluster(store *metapb.Store, region *metapb.Region) error {
-	cluster := &metapb.Cluster{
+	meta := &metapb.Cluster{
 		Id:           kv.s.cfg.ClusterID,
 		MaxPeerCount: uint32(kv.s.cfg.MaxPeerCount),
 	}
 
 	var ops []clientv3.Op
 
-	// Put cluster.
-	value, err := cluster.Marshal()
+	// Put meta.
+	value, err := meta.Marshal()
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -98,35 +98,6 @@ func (kv *kv) bootstrapCluster(store *metapb.Store, region *metapb.Region) error
 		return errors.Trace(errBootstrapped)
 	}
 	return nil
-}
-
-func (kv *kv) initCluster() (*clusterInfo, error) {
-	log.Info("load cluster")
-
-	cache := newClusterInfo(kv.s.idAlloc)
-	cache.meta = &metapb.Cluster{}
-
-	ok, err := kv.loadMeta(cache.meta)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-	if !ok {
-		return nil, nil
-	}
-
-	start := time.Now()
-	if err := kv.loadStores(cache.stores, kvRangeLimit); err != nil {
-		return nil, errors.Trace(err)
-	}
-	log.Infof("load %v stores cost %v", cache.getStoreCount(), time.Since(start))
-
-	start = time.Now()
-	if err := kv.loadRegions(cache.regions, kvRangeLimit); err != nil {
-		return nil, errors.Trace(err)
-	}
-	log.Infof("load %v regions cost %v", cache.getRegionCount(), time.Since(start))
-
-	return cache, nil
 }
 
 func (kv *kv) loadStores(stores *storesInfo, rangeLimit int64) error {

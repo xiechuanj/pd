@@ -75,14 +75,15 @@ func (c *RaftCluster) start() error {
 		return nil
 	}
 
-	cache, err := c.s.kv.initCluster()
+	cluster := newClusterInfo(c.s.idAlloc)
+	bootstrapped, err := cluster.initCache(c.s.kv)
 	if err != nil {
 		return errors.Trace(err)
 	}
-	if cache == nil {
+	if !bootstrapped {
 		return nil
 	}
-	c.cachedCluster = cache
+	c.cachedCluster = cluster
 
 	c.balancerWorker = newBalancerWorker(c.cachedCluster, &c.s.cfg.BalanceCfg)
 	c.balancerWorker.run()
@@ -268,19 +269,21 @@ func (c *RaftCluster) putStore(store *metapb.Store) error {
 		return errors.Errorf("invalid put store %v", store)
 	}
 
+	cluster := c.cachedCluster
+
 	// There are 3 cases here:
 	// Case 1: store id exists with the same address - do nothing;
 	// Case 2: store id exists with different address - update address;
-	if s := c.cachedCluster.getStore(store.GetId()); s != nil {
+	if s := cluster.getStore(store.GetId()); s != nil {
 		if s.GetAddress() == store.GetAddress() {
 			return nil
 		}
 		s.Address = store.Address
-		return c.saveStore(s.Store)
+		return cluster.putStore(s)
 	}
 
 	// Case 3: store id does not exist, check duplicated address.
-	for _, s := range c.cachedCluster.getStores() {
+	for _, s := range cluster.getStores() {
 		// It's OK to start a new store on the same address if the old store has been removed.
 		if s.isTombstone() {
 			continue
@@ -289,16 +292,8 @@ func (c *RaftCluster) putStore(store *metapb.Store) error {
 			return errors.Errorf("duplicated store address: %v, already registered by %v", store, s.Store)
 		}
 	}
-	return c.saveStore(store)
-}
 
-func (c *RaftCluster) saveStore(store *metapb.Store) error {
-	if err := c.s.kv.saveStore(store); err != nil {
-		return errors.Trace(err)
-	}
-
-	c.cachedCluster.setStore(newStoreInfo(store))
-	return nil
+	return cluster.putStore(newStoreInfo(store))
 }
 
 // RemoveStore marks a store as offline in cluster.
@@ -307,22 +302,22 @@ func (c *RaftCluster) RemoveStore(storeID uint64) error {
 	c.Lock()
 	defer c.Unlock()
 
-	store, _, err := c.GetStore(storeID)
-	if err != nil {
-		return errors.Trace(err)
+	store := c.cachedCluster.getStore(storeID)
+	if store == nil {
+		return errors.Trace(errStoreNotFound(storeID))
 	}
 
 	// Remove an offline store should be OK, nothing to do.
-	if store.State == metapb.StoreState_Offline {
+	if store.isOffline() {
 		return nil
 	}
 
-	if store.State == metapb.StoreState_Tombstone {
+	if store.isTombstone() {
 		return errors.New("store has been removed")
 	}
 
 	store.State = metapb.StoreState_Offline
-	return c.saveStore(store)
+	return c.cachedCluster.putStore(store)
 }
 
 // BuryStore marks a store as tombstone in cluster.
@@ -333,17 +328,17 @@ func (c *RaftCluster) BuryStore(storeID uint64, force bool) error {
 	c.Lock()
 	defer c.Unlock()
 
-	store, _, err := c.GetStore(storeID)
-	if err != nil {
-		return errors.Trace(err)
+	store := c.cachedCluster.getStore(storeID)
+	if store == nil {
+		return errors.Trace(errStoreNotFound(storeID))
 	}
 
 	// Bury a tombstone store should be OK, nothing to do.
-	if store.State == metapb.StoreState_Tombstone {
+	if store.isTombstone() {
 		return nil
 	}
 
-	if store.State == metapb.StoreState_Up {
+	if store.isUp() {
 		if !force {
 			return errors.New("store is still up, please remove store gracefully")
 		}
@@ -351,7 +346,7 @@ func (c *RaftCluster) BuryStore(storeID uint64, force bool) error {
 	}
 
 	store.State = metapb.StoreState_Tombstone
-	return c.saveStore(store)
+	return c.cachedCluster.putStore(store)
 }
 
 func (c *RaftCluster) checkStores() {
@@ -465,13 +460,7 @@ func (c *RaftCluster) putConfig(meta *metapb.Cluster) error {
 	if meta.GetId() != c.clusterID {
 		return errors.Errorf("invalid cluster %v, mismatch cluster id %d", meta, c.clusterID)
 	}
-
-	if err := c.s.kv.saveMeta(meta); err != nil {
-		return errors.Trace(err)
-	}
-
-	c.cachedCluster.setMeta(meta)
-	return nil
+	return c.cachedCluster.putMeta(meta)
 }
 
 // NewAddPeerOperator creates an operator to add a peer to the region.
@@ -499,13 +488,9 @@ func (c *RaftCluster) NewAddPeerOperator(regionID uint64, storeID uint64) (Opera
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
-		peerID, err := cluster.idAlloc.Alloc()
+		peer, err = cluster.allocPeer(storeID)
 		if err != nil {
 			return nil, errors.Trace(err)
-		}
-		peer = &metapb.Peer{
-			Id:      peerID,
-			StoreId: storeID,
 		}
 	}
 

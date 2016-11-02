@@ -363,7 +363,7 @@ func (s *testClusterSuite) resetStoreState(c *C, storeID uint64, state metapb.St
 	store := cluster.cachedCluster.getStore(storeID)
 	c.Assert(store, NotNil)
 	store.State = state
-	cluster.cachedCluster.setStore(store)
+	c.Assert(cluster.cachedCluster.putStore(store), IsNil)
 }
 
 func (s *testClusterSuite) testRemoveStore(c *C, conn net.Conn, clusterID uint64, store *metapb.Store) {

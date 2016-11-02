@@ -183,7 +183,7 @@ func (c *conn) handleRegionHeartbeat(req *pdpb.Request) (*pdpb.Response, error) 
 		return nil, errors.Errorf("invalid request leader, %v", request)
 	}
 
-	updated, err := cluster.cachedCluster.handleRegionHeartbeat(region)
+	err = cluster.cachedCluster.handleRegionHeartbeat(region)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -191,12 +191,6 @@ func (c *conn) handleRegionHeartbeat(req *pdpb.Request) (*pdpb.Response, error) 
 	res, err := cluster.handleRegionHeartbeat(region)
 	if err != nil {
 		return nil, errors.Trace(err)
-	}
-
-	if updated {
-		if err := c.s.kv.saveRegion(region.Region); err != nil {
-			return nil, errors.Trace(err)
-		}
 	}
 
 	return &pdpb.Response{

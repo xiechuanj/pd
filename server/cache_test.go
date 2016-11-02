@@ -182,14 +182,41 @@ var _ = Suite(&testClusterInfoSuite{})
 
 type testClusterInfoSuite struct{}
 
-func (s *testClusterInfoSuite) TestStoreHeartbeat(c *C) {
+func (s *testClusterInfoSuite) Test(c *C) {
+	var tests []func(*C, *clusterInfo)
+	tests = append(tests, s.testStoreHeartbeat)
+	tests = append(tests, s.testRegionHeartbeat)
+	tests = append(tests, s.testSplitAndMerge)
+
+	// Test without kv.
+	{
+		for _, test := range tests {
+			cache := newClusterInfo(newMockIDAllocator())
+			test(c, cache)
+		}
+	}
+
+	// Test with kv.
+	{
+		for _, test := range tests {
+			server, cleanup := mustRunTestServer(c)
+			defer cleanup()
+			cache := newClusterInfo(server.idAlloc)
+			bootstrapped, err := cache.initCache(server.kv)
+			c.Assert(bootstrapped, IsFalse)
+			c.Assert(err, IsNil)
+			test(c, cache)
+		}
+	}
+}
+
+func (s *testClusterInfoSuite) testStoreHeartbeat(c *C, cache *clusterInfo) {
 	n, np := uint64(3), uint64(3)
-	cache := newClusterInfo(newMockIDAllocator())
 	stores := newTestStores(n)
 	regions := newTestRegions(n, np)
 
 	for _, region := range regions {
-		cache.setRegion(region)
+		c.Assert(cache.putRegion(region), IsNil)
 	}
 	c.Assert(cache.getRegionCount(), Equals, int(n))
 
@@ -197,7 +224,7 @@ func (s *testClusterInfoSuite) TestStoreHeartbeat(c *C) {
 		storeStats := &pdpb.StoreStats{StoreId: store.GetId()}
 		c.Assert(cache.handleStoreHeartbeat(storeStats), NotNil)
 
-		cache.setStore(store)
+		c.Assert(cache.putStore(store), IsNil)
 		c.Assert(cache.getStoreCount(), Equals, int(i+1))
 
 		stats := store.stats
@@ -219,22 +246,17 @@ func (s *testClusterInfoSuite) TestStoreHeartbeat(c *C) {
 	c.Assert(cache.getStoreCount(), Equals, int(n))
 }
 
-func (s *testClusterInfoSuite) TestRegionHeartbeat(c *C) {
+func (s *testClusterInfoSuite) testRegionHeartbeat(c *C, cache *clusterInfo) {
 	n, np := uint64(3), uint64(3)
-	cache := newClusterInfo(newMockIDAllocator())
 	regions := newTestRegions(n, np)
 
 	for i, region := range regions {
 		// region does not exist.
-		updated, err := cache.handleRegionHeartbeat(region)
-		c.Assert(updated, IsTrue)
-		c.Assert(err, IsNil)
+		c.Assert(cache.handleRegionHeartbeat(region), IsNil)
 		checkRegions(c, cache.regions, regions[0:i+1])
 
 		// region is the same, not updated.
-		updated, err = cache.handleRegionHeartbeat(region)
-		c.Assert(updated, IsFalse)
-		c.Assert(err, IsNil)
+		c.Assert(cache.handleRegionHeartbeat(region), IsNil)
 		checkRegions(c, cache.regions, regions[0:i+1])
 
 		epoch := region.clone().GetRegionEpoch()
@@ -243,9 +265,7 @@ func (s *testClusterInfoSuite) TestRegionHeartbeat(c *C) {
 		region.RegionEpoch = &metapb.RegionEpoch{
 			Version: epoch.GetVersion() + 1,
 		}
-		updated, err = cache.handleRegionHeartbeat(region)
-		c.Assert(updated, IsTrue)
-		c.Assert(err, IsNil)
+		c.Assert(cache.handleRegionHeartbeat(region), IsNil)
 		checkRegions(c, cache.regions, regions[0:i+1])
 
 		// region is stale (Version).
@@ -253,9 +273,7 @@ func (s *testClusterInfoSuite) TestRegionHeartbeat(c *C) {
 		stale.RegionEpoch = &metapb.RegionEpoch{
 			ConfVer: epoch.GetConfVer() + 1,
 		}
-		updated, err = cache.handleRegionHeartbeat(stale)
-		c.Assert(updated, IsFalse)
-		c.Assert(err, NotNil)
+		c.Assert(cache.handleRegionHeartbeat(stale), NotNil)
 		checkRegions(c, cache.regions, regions[0:i+1])
 
 		// region is updated.
@@ -263,9 +281,7 @@ func (s *testClusterInfoSuite) TestRegionHeartbeat(c *C) {
 			Version: epoch.GetVersion() + 1,
 			ConfVer: epoch.GetConfVer() + 1,
 		}
-		updated, err = cache.handleRegionHeartbeat(region)
-		c.Assert(updated, IsTrue)
-		c.Assert(err, IsNil)
+		c.Assert(cache.handleRegionHeartbeat(region), IsNil)
 		checkRegions(c, cache.regions, regions[0:i+1])
 
 		// region is stale (ConfVer).
@@ -273,9 +289,7 @@ func (s *testClusterInfoSuite) TestRegionHeartbeat(c *C) {
 		stale.RegionEpoch = &metapb.RegionEpoch{
 			Version: epoch.GetVersion() + 1,
 		}
-		updated, err = cache.handleRegionHeartbeat(stale)
-		c.Assert(updated, IsFalse)
-		c.Assert(err, NotNil)
+		c.Assert(cache.handleRegionHeartbeat(stale), NotNil)
 		checkRegions(c, cache.regions, regions[0:i+1])
 	}
 
@@ -302,10 +316,7 @@ func heartbeatRegions(c *C, cache *clusterInfo, regions []*metapb.Region) {
 	for _, region := range regions {
 		r := newRegionInfo(region, nil)
 
-		updated, err := cache.handleRegionHeartbeat(r)
-		c.Assert(updated, IsTrue)
-		c.Assert(err, IsNil)
-
+		c.Assert(cache.handleRegionHeartbeat(r), IsNil)
 		checkRegion(c, cache.getRegion(r.GetId()), r)
 		checkRegion(c, cache.searchRegion(r.StartKey), r)
 
@@ -331,8 +342,7 @@ func heartbeatRegions(c *C, cache *clusterInfo, regions []*metapb.Region) {
 	}
 }
 
-func (s *testClusterInfoSuite) TestRegionHeartbeatSplitAndMerge(c *C) {
-	cache := newClusterInfo(newMockIDAllocator())
+func (s *testClusterInfoSuite) testSplitAndMerge(c *C, cache *clusterInfo) {
 	regions := []*metapb.Region{
 		{
 			Id:          1,
@@ -395,7 +405,6 @@ func (s *testClusterUtilSuite) TestCheckStaleRegion(c *C) {
 	c.Assert(checkStaleRegion(region, origin), NotNil)
 }
 
-// TODO: Move this to some where else.
 // mockIDAllocator mocks IDAllocator and it is only used for test.
 type mockIDAllocator struct {
 	base uint64
