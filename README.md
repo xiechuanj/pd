@@ -28,8 +28,7 @@ you can let PD listen on the host IP.
 # Set correct HostIP here. 
 export HostIP="192.168.199.105"
 
-pd-server --cluster-id=1 \
-          --name="pd" \
+pd-server --name="pd" \
           --client-urls="http://${HostIP}:2379" \
           --peer-urls="http://${HostIP}:2380"
 ```
@@ -89,7 +88,6 @@ Run a single node with Docker:
 export HostIP="192.168.199.105"
 
 docker run -d -p 2379:2379 -p 2380:2380 --name pd pingcap/pd \
-          --cluster-id=1 \
           --name="pd" \
           --client-urls="http://0.0.0.0:2379" \
           --advertise-client-urls="http://${HostIP}:2379" \
