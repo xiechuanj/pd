@@ -211,6 +211,13 @@ func (bw *balancerWorker) allowBalance() bool {
 func (bw *balancerWorker) doBalance() error {
 	collectBalancerGaugeMetrics(bw.getBalanceOperators())
 
+	if bw.cfg.Random {
+		if bop := randomBalance(bw.cluster); bop != nil {
+			log.Infof("[random] %v", bop)
+			bw.addBalanceOperator(bop.getRegionID(), bop)
+		}
+	}
+
 	balanceCount := uint64(0)
 	for i := uint64(0); i < bw.cfg.MaxBalanceRetryPerLoop; i++ {
 		if balanceCount >= bw.cfg.MaxBalanceCountPerLoop {
@@ -249,13 +256,6 @@ func (bw *balancerWorker) doBalance() error {
 		if bw.addBalanceOperator(regionID, bop) {
 			bw.addRegionCache(regionID)
 			balanceCount++
-		}
-	}
-
-	if bw.cfg.Random {
-		if bop := randomBalance(bw.cluster); bop != nil {
-			log.Infof("[random] %v", bop)
-			bw.addBalanceOperator(bop.getRegionID(), bop)
 		}
 	}
 
