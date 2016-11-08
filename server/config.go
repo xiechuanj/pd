@@ -257,6 +257,8 @@ func (c *Config) configFromFile(path string) error {
 
 // BalanceConfig is the balance configuration.
 type BalanceConfig struct {
+	Random bool `toml:"random" json:"random"`
+
 	// For capacity balance.
 	// If the used ratio of one store is less than this value,
 	// it will never be used as a from store.

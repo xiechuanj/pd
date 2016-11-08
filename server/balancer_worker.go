@@ -14,6 +14,7 @@
 package server
 
 import (
+	"math/rand"
 	"sync"
 	"time"
 
@@ -99,6 +100,9 @@ func (bw *balancerWorker) addBalanceOperator(regionID uint64, op *balanceOperato
 	defer bw.Unlock()
 
 	oldOp, ok := bw.balanceOperators[regionID]
+
+	log.Infof("[balancer_worker] add\n%v\nold\n%v", op, oldOp)
+
 	if ok {
 		if !oldOp.Start.IsZero() {
 			// Old operator is still in progress, don't replace it.
@@ -140,6 +144,8 @@ func (bw *balancerWorker) removeBalanceOperator(regionID uint64) {
 	if !ok {
 		return
 	}
+
+	log.Infof("[balancer_worker] remove\n%v", op)
 
 	delete(bw.balanceOperators, regionID)
 
@@ -246,6 +252,13 @@ func (bw *balancerWorker) doBalance() error {
 		}
 	}
 
+	if bw.cfg.Random {
+		if bop := randomBalance(bw.cluster); bop != nil {
+			log.Infof("[random] %v", bop)
+			bw.addBalanceOperator(bop.getRegionID(), bop)
+		}
+	}
+
 	return nil
 }
 
@@ -318,4 +331,30 @@ func collectBalancerGaugeMetrics(ops map[uint64]Operator) {
 	for label, value := range metrics {
 		balancerGauge.WithLabelValues(label).Set(float64(value))
 	}
+}
+
+func randomBalance(cluster *clusterInfo) *balanceOperator {
+	storeCount := cluster.getStoreCount()
+	if storeCount == 0 {
+		return nil
+	}
+
+	storeID := uint64(rand.Int() % storeCount)
+	region := cluster.randLeaderRegion(storeID)
+	if region == nil {
+		return nil
+	}
+
+	toStoreID := uint64(rand.Int() % storeCount)
+	for toStoreID == storeID {
+		toStoreID = uint64(rand.Int() % storeCount)
+	}
+	newPeer, err := cluster.allocPeer(toStoreID)
+	if err != nil {
+		return nil
+	}
+
+	addPeerOperator := newAddPeerOperator(region.GetId(), newPeer)
+	removePeerOperator := newRemovePeerOperator(region.GetId(), region.Leader)
+	return newBalanceOperator(region, adminOP, addPeerOperator, removePeerOperator)
 }
