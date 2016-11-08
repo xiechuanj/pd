@@ -334,22 +334,19 @@ func collectBalancerGaugeMetrics(ops map[uint64]Operator) {
 }
 
 func randomBalance(cluster *clusterInfo) *balanceOperator {
-	storeCount := cluster.getStoreCount()
-	if storeCount == 0 {
-		return nil
-	}
+	stores := cluster.getStores()
 
-	storeID := uint64(rand.Int() % storeCount)
-	region := cluster.randLeaderRegion(storeID)
+	store := stores[rand.Int()%len(stores)]
+	region := cluster.randLeaderRegion(store.GetId())
 	if region == nil {
 		return nil
 	}
 
-	toStoreID := uint64(rand.Int() % storeCount)
-	for toStoreID == storeID {
-		toStoreID = uint64(rand.Int() % storeCount)
+	newStore := stores[rand.Int()%len(stores)]
+	for newStore == store {
+		newStore = stores[rand.Int()%len(stores)]
 	}
-	newPeer, err := cluster.allocPeer(toStoreID)
+	newPeer, err := cluster.allocPeer(newStore.GetId())
 	if err != nil {
 		return nil
 	}
