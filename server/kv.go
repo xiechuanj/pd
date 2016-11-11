@@ -98,9 +98,6 @@ func (kv *kv) loadStores(stores *storesInfo, rangeLimit int64) error {
 		if err != nil {
 			return errors.Trace(err)
 		}
-		if len(resp.Kvs) == 0 {
-			return nil
-		}
 
 		for _, item := range resp.Kvs {
 			store := &metapb.Store{}
@@ -110,6 +107,10 @@ func (kv *kv) loadStores(stores *storesInfo, rangeLimit int64) error {
 
 			nextID = store.GetId() + 1
 			stores.setStore(newStoreInfo(store))
+		}
+
+		if len(resp.Kvs) < int(rangeLimit) {
+			return nil
 		}
 	}
 }
@@ -126,9 +127,6 @@ func (kv *kv) loadRegions(regions *regionsInfo, rangeLimit int64) error {
 		if err != nil {
 			return errors.Trace(err)
 		}
-		if len(resp.Kvs) == 0 {
-			return nil
-		}
 
 		for _, item := range resp.Kvs {
 			region := &metapb.Region{}
@@ -138,6 +136,10 @@ func (kv *kv) loadRegions(regions *regionsInfo, rangeLimit int64) error {
 
 			nextID = region.GetId() + 1
 			regions.setRegion(newRegionInfo(region, nil))
+		}
+
+		if len(resp.Kvs) < int(rangeLimit) {
+			return nil
 		}
 	}
 }
@@ -191,7 +193,7 @@ func kvGet(c *clientv3.Client, key string, opts ...clientv3.OpOption) (*clientv3
 
 	start := time.Now()
 	resp, err := clientv3.NewKV(c).Get(ctx, key, opts...)
-	if cost := time.Now().Sub(start); cost > kvSlowRequestTime {
+	if cost := time.Since(start); cost > kvSlowRequestTime {
 		log.Warnf("kv gets too slow: key %v cost %v err %v", key, cost, err)
 	}
 
