@@ -297,10 +297,10 @@ func (c *clusterInfo) getMeta() *metapb.Cluster {
 func (c *clusterInfo) putMeta(meta *metapb.Cluster) error {
 	c.Lock()
 	defer c.Unlock()
-	return c.innerPutMeta(proto.Clone(meta).(*metapb.Cluster))
+	return c.putMetaLocked(proto.Clone(meta).(*metapb.Cluster))
 }
 
-func (c *clusterInfo) innerPutMeta(meta *metapb.Cluster) error {
+func (c *clusterInfo) putMetaLocked(meta *metapb.Cluster) error {
 	if c.kv != nil {
 		if err := c.kv.saveMeta(meta); err != nil {
 			return errors.Trace(err)
@@ -319,10 +319,10 @@ func (c *clusterInfo) getStore(storeID uint64) *storeInfo {
 func (c *clusterInfo) putStore(store *storeInfo) error {
 	c.Lock()
 	defer c.Unlock()
-	return c.innerPutStore(store.clone())
+	return c.putStoreLocked(store.clone())
 }
 
-func (c *clusterInfo) innerPutStore(store *storeInfo) error {
+func (c *clusterInfo) putStoreLocked(store *storeInfo) error {
 	if c.kv != nil {
 		if err := c.kv.saveStore(store.Store); err != nil {
 			return errors.Trace(err)
@@ -365,10 +365,10 @@ func (c *clusterInfo) searchRegion(regionKey []byte) *regionInfo {
 func (c *clusterInfo) putRegion(region *regionInfo) error {
 	c.Lock()
 	defer c.Unlock()
-	return c.innerPutRegion(region.clone())
+	return c.putRegionLocked(region.clone())
 }
 
-func (c *clusterInfo) innerPutRegion(region *regionInfo) error {
+func (c *clusterInfo) putRegionLocked(region *regionInfo) error {
 	if c.kv != nil {
 		if err := c.kv.saveRegion(region.Region); err != nil {
 			return errors.Trace(err)
@@ -450,7 +450,7 @@ func (c *clusterInfo) handleRegionHeartbeat(region *regionInfo) error {
 
 	// Region does not exist, add it.
 	if origin == nil {
-		return c.innerPutRegion(region)
+		return c.putRegionLocked(region)
 	}
 
 	r := region.GetRegionEpoch()
@@ -463,7 +463,7 @@ func (c *clusterInfo) handleRegionHeartbeat(region *regionInfo) error {
 
 	// Region meta is updated, update kv and cache.
 	if r.GetVersion() > o.GetVersion() || r.GetConfVer() > o.GetConfVer() {
-		return c.innerPutRegion(region)
+		return c.putRegionLocked(region)
 	}
 
 	// Region meta is the same, update cache only.
