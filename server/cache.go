@@ -261,13 +261,13 @@ func newClusterInfoWithKV(id IDAllocator, kv *kv) (*clusterInfo, error) {
 	if err := kv.loadStores(c.stores, kvRangeLimit); err != nil {
 		return nil, errors.Trace(err)
 	}
-	log.Infof("load %v stores cost %v", c.getStoreCount(), time.Since(start))
+	log.Infof("load %v stores cost %v", c.stores.getStoreCount(), time.Since(start))
 
 	start = time.Now()
 	if err := kv.loadRegions(c.regions, kvRangeLimit); err != nil {
 		return nil, errors.Trace(err)
 	}
-	log.Infof("load %v regions cost %v", c.getRegionCount(), time.Since(start))
+	log.Infof("load %v regions cost %v", c.regions.getRegionCount(), time.Since(start))
 
 	return c, nil
 }
