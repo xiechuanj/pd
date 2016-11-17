@@ -215,7 +215,7 @@ func (s *testClusterInfoSuite) TestLoadClusterInfo(c *C) {
 	kv := server.kv
 
 	// Cluster is not bootstrapped.
-	cluster, err := newClusterInfoWithKV(server.idAlloc, kv)
+	cluster, err := loadClusterInfo(server.idAlloc, kv)
 	c.Assert(err, IsNil)
 	c.Assert(cluster, IsNil)
 
@@ -226,7 +226,7 @@ func (s *testClusterInfoSuite) TestLoadClusterInfo(c *C) {
 	stores := mustSaveStores(c, kv, n)
 	regions := mustSaveRegions(c, kv, n)
 
-	cluster, err = newClusterInfoWithKV(server.idAlloc, kv)
+	cluster, err = loadClusterInfo(server.idAlloc, kv)
 	c.Assert(err, IsNil)
 	c.Assert(cluster, NotNil)
 

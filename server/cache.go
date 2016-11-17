@@ -244,7 +244,7 @@ func newClusterInfo(id IDAllocator) *clusterInfo {
 }
 
 // Return nil if cluster is not bootstrapped.
-func newClusterInfoWithKV(id IDAllocator, kv *kv) (*clusterInfo, error) {
+func loadClusterInfo(id IDAllocator, kv *kv) (*clusterInfo, error) {
 	c := newClusterInfo(id)
 	c.kv = kv
 

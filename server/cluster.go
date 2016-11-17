@@ -80,7 +80,7 @@ func (c *RaftCluster) start() error {
 		return nil
 	}
 
-	cluster, err := newClusterInfoWithKV(c.s.idAlloc, c.s.kv)
+	cluster, err := loadClusterInfo(c.s.idAlloc, c.s.kv)
 	if err != nil {
 		return errors.Trace(err)
 	}
