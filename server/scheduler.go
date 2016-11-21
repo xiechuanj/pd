@@ -13,30 +13,6 @@
 
 package server
 
-func schedulePeer(cluster *clusterInfo, s Selector) (*regionInfo, *storeInfo, *storeInfo) {
-	stores := cluster.getStores()
-
-	source := s.SelectSource(stores)
-	if source == nil {
-		return nil, nil, nil
-	}
-
-	region := cluster.randFollowerRegion(source.GetId())
-	if region == nil {
-		region = cluster.randLeaderRegion(source.GetId())
-	}
-	if region == nil {
-		return nil, nil, nil
-	}
-
-	target := s.SelectTarget(stores, newExcludedFilter(nil, region.GetStoreIds()))
-	if target == nil {
-		return nil, nil, nil
-	}
-
-	return region, source, target
-}
-
 func scheduleLeader(cluster *clusterInfo, s Selector) (*regionInfo, *storeInfo, *storeInfo) {
 	sourceStores := cluster.getStores()
 
@@ -53,6 +29,30 @@ func scheduleLeader(cluster *clusterInfo, s Selector) (*regionInfo, *storeInfo, 
 	targetStores := cluster.getFollowerStores(region)
 
 	target := s.SelectTarget(targetStores)
+	if target == nil {
+		return nil, nil, nil
+	}
+
+	return region, source, target
+}
+
+func scheduleStorage(cluster *clusterInfo, s Selector) (*regionInfo, *storeInfo, *storeInfo) {
+	stores := cluster.getStores()
+
+	source := s.SelectSource(stores)
+	if source == nil {
+		return nil, nil, nil
+	}
+
+	region := cluster.randFollowerRegion(source.GetId())
+	if region == nil {
+		region = cluster.randLeaderRegion(source.GetId())
+	}
+	if region == nil {
+		return nil, nil, nil
+	}
+
+	target := s.SelectTarget(stores, newExcludedFilter(nil, region.GetStoreIds()))
 	if target == nil {
 		return nil, nil, nil
 	}

@@ -57,7 +57,7 @@ func (cb *capacityBalancer) ScoreType() scoreType {
 // Balance tries to select a store region to do balance.
 // The balance type is follower balance.
 func (cb *capacityBalancer) Balance(cluster *clusterInfo) (*score, *balanceOperator, error) {
-	region, source, target := schedulePeer(cluster, cb.selector)
+	region, source, target := scheduleStorage(cluster, cb.selector)
 	if region == nil {
 		return nil, nil, nil
 	}
