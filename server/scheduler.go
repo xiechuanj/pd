@@ -13,6 +13,7 @@
 
 package server
 
+// scheduleLeader schedules a region to transfer leader from the source store to the target store.
 func scheduleLeader(cluster *clusterInfo, s Selector) (*regionInfo, *storeInfo, *storeInfo) {
 	sourceStores := cluster.getStores()
 
@@ -36,6 +37,7 @@ func scheduleLeader(cluster *clusterInfo, s Selector) (*regionInfo, *storeInfo, 
 	return region, source, target
 }
 
+// scheduleStorage schedules a region to transfer peer from the source store to the target store.
 func scheduleStorage(cluster *clusterInfo, s Selector) (*regionInfo, *storeInfo, *storeInfo) {
 	stores := cluster.getStores()
 
