@@ -63,7 +63,7 @@ func (cb *capacityBalancer) Balance(cluster *clusterInfo) (float64, *balanceOper
 	}
 
 	// Check diff score.
-	diff := source.getScore(cb.kind) - target.getScore(cb.kind)
+	diff := source.resourceRatio(cb.kind) - target.resourceRatio(cb.kind)
 	if diff < cb.cfg.MaxDiffScoreFraction {
 		return 0, nil, nil
 	}
@@ -112,7 +112,7 @@ func (lb *leaderBalancer) Balance(cluster *clusterInfo) (float64, *balanceOperat
 		return 0, nil, nil
 	}
 
-	diff := source.getScore(lb.kind) - target.getScore(lb.kind)
+	diff := source.resourceRatio(lb.kind) - target.resourceRatio(lb.kind)
 	if diff < lb.cfg.MaxDiffScoreFraction {
 		return 0, nil, nil
 	}

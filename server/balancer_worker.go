@@ -256,15 +256,6 @@ func (bw *balancerWorker) checkReplicas(region *regionInfo) error {
 	return nil
 }
 
-func (bw *balancerWorker) storeScores(store *storeInfo) []int {
-	scores := make([]int, 0, len(bw.balancers))
-	for _, balancer := range bw.balancers {
-		score := store.getScore(balancer.GetResourceKind())
-		scores = append(scores, int(score*100))
-	}
-	return scores
-}
-
 func collectOperatorMetrics(bop *balanceOperator) map[string]uint64 {
 	metrics := make(map[string]uint64)
 	prefix := ""
