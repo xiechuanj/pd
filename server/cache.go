@@ -370,9 +370,12 @@ func (c *clusterInfo) putRegion(region *regionInfo) error {
 
 func (c *clusterInfo) putRegionLocked(region *regionInfo) error {
 	if c.kv != nil {
-		if err := c.kv.saveRegion(region.Region); err != nil {
-			return errors.Trace(err)
-		}
+		go func() {
+			err := c.kv.saveRegion(region.Region)
+			if err != nil {
+				log.Errorf("failed to save region: %v", region.Region)
+			}
+		}()
 	}
 	c.regions.setRegion(region)
 	return nil
