@@ -121,22 +121,30 @@ func (s *testLeaderBalancerSuite) Test(c *C) {
 	cfg.MinLeaderCount = 10
 	cfg.MinBalanceDiffRatio = 0.1
 
+	// Add stores 1,2,3,4
 	tc.addLeaderStore(1, 6, 30)
 	tc.addLeaderStore(2, 7, 30)
 	tc.addLeaderStore(3, 8, 30)
 	tc.addLeaderStore(4, 9, 30)
+	// Add region 1 with leader in store 4 and followers in stores 1,2,3.
 	tc.addLeaderRegion(1, 4, 1, 2, 3)
 
 	// Test leaderCountFilter.
+	// When leaderCount < 10, no schedule.
 	c.Assert(lb.Schedule(cluster), IsNil)
 	tc.updateLeaderCount(4, 11, 30)
+	// When leaderCount > 10, transfer leader
+	// from store 4 (with most leaders) to store 1 (with least leaders).
 	checkTransferLeader(c, lb.Schedule(cluster), 4, 1)
 
 	// Test stateFilter.
+	// If store 1 is down, it will be filtered,
+	// store 2 becomes the store with least leaders.
 	tc.setStoreDown(1)
 	checkTransferLeader(c, lb.Schedule(cluster), 4, 2)
 
 	// Test MinBalanceDiffRatio.
+	// When diff leader ratio < MinBalanceDiffRatio, no schedule.
 	tc.updateLeaderCount(2, 10, 30)
 	tc.updateLeaderCount(3, 10, 30)
 	tc.updateLeaderCount(4, 11, 30)
@@ -157,22 +165,30 @@ func (s *testStorageBalancerSuite) Test(c *C) {
 	cfg.MinRegionCount = 10
 	cfg.MinBalanceDiffRatio = 0.1
 
+	// Add stores 1,2,3,4.
 	tc.addRegionStore(1, 6, 0.1)
 	tc.addRegionStore(2, 7, 0.2)
 	tc.addRegionStore(3, 8, 0.3)
 	tc.addRegionStore(4, 9, 0.4)
+	// Add region 1 with leader in store 4.
 	tc.addLeaderRegion(1, 4)
 
 	// Test regionCountFilter.
+	// When regionCount < 10, no schedule.
 	c.Assert(sb.Schedule(cluster), IsNil)
 	tc.updateRegionCount(4, 11, 0.4)
+	// When regionCount > 11, transfer peer
+	// from store 4 (with most regions) to store 1 (with least regions).
 	checkTransferPeer(c, sb.Schedule(cluster), 4, 1)
 
 	// Test stateFilter.
 	tc.setStoreOffline(1)
+	// When store 1 is offline, it will be filtered,
+	// store 2 becomes the store with least regions.
 	checkTransferPeer(c, sb.Schedule(cluster), 4, 2)
 
 	// Test MinBalanceDiffRatio.
+	// When diff storage ratio < MinBalanceDiffRatio, no schedule.
 	tc.updateRegionCount(2, 6, 0.4)
 	tc.updateRegionCount(3, 7, 0.4)
 	tc.updateRegionCount(4, 8, 0.4)
@@ -193,10 +209,12 @@ func (s *testReplicaCheckerSuite) Test(c *C) {
 	cfg.MaxSnapshotCount = 2
 	cluster.putMeta(&metapb.Cluster{Id: 1, MaxPeerCount: 3})
 
+	// Add stores 1,2,3,4.
 	tc.addRegionStore(1, 4, 0.4)
 	tc.addRegionStore(2, 3, 0.3)
 	tc.addRegionStore(3, 2, 0.1)
 	tc.addRegionStore(4, 1, 0.2)
+	// Add region 1 with leader in store 1 and follower in store 2.
 	tc.addLeaderRegion(1, 1, 2)
 
 	// Region has 2 peers, we need 3.
@@ -221,12 +239,15 @@ func (s *testReplicaCheckerSuite) Test(c *C) {
 	checkAddPeer(c, rc.Check(region), 4)
 
 	// Test stateFilter.
+	// If store 4 is down, we have no other stores to add peer.
 	tc.setStoreDown(4)
 	c.Assert(rc.Check(region), IsNil)
 
 	// Test snapshotCountFilter.
+	// If snapshotCount < MaxSnapshotCount, we can add peer.
 	tc.setStoreUp(4)
 	checkAddPeer(c, rc.Check(region), 4)
+	// If snapshotCount > MaxSnapshotCount, we can not add peer.
 	tc.updateSnapshotCount(4, 3)
 	c.Assert(rc.Check(region), IsNil)
 	tc.updateSnapshotCount(4, 1)
