@@ -20,7 +20,6 @@ import (
 
 type leaderBalancer struct {
 	opt      *scheduleOption
-	kind     ResourceKind
 	selector Selector
 }
 
@@ -31,7 +30,6 @@ func newLeaderBalancer(opt *scheduleOption) *leaderBalancer {
 
 	return &leaderBalancer{
 		opt:      opt,
-		kind:     leaderKind,
 		selector: newBalanceSelector(leaderKind, filters),
 	}
 }
@@ -41,7 +39,7 @@ func (l *leaderBalancer) GetName() string {
 }
 
 func (l *leaderBalancer) GetResourceKind() ResourceKind {
-	return l.kind
+	return leaderKind
 }
 
 func (l *leaderBalancer) Schedule(cluster *clusterInfo) *balanceOperator {
@@ -50,7 +48,7 @@ func (l *leaderBalancer) Schedule(cluster *clusterInfo) *balanceOperator {
 		return nil
 	}
 
-	diff := source.resourceRatio(l.kind) - target.resourceRatio(l.kind)
+	diff := source.leaderRatio() - target.leaderRatio()
 	if diff < l.opt.GetMinBalanceDiffRatio() {
 		return nil
 	}
@@ -66,7 +64,6 @@ func (l *leaderBalancer) Schedule(cluster *clusterInfo) *balanceOperator {
 
 type storageBalancer struct {
 	opt      *scheduleOption
-	kind     ResourceKind
 	selector Selector
 }
 
@@ -78,7 +75,6 @@ func newStorageBalancer(opt *scheduleOption) *storageBalancer {
 
 	return &storageBalancer{
 		opt:      opt,
-		kind:     storageKind,
 		selector: newBalanceSelector(storageKind, filters),
 	}
 }
@@ -88,7 +84,7 @@ func (s *storageBalancer) GetName() string {
 }
 
 func (s *storageBalancer) GetResourceKind() ResourceKind {
-	return s.kind
+	return storageKind
 }
 
 func (s *storageBalancer) Schedule(cluster *clusterInfo) *balanceOperator {
@@ -97,7 +93,7 @@ func (s *storageBalancer) Schedule(cluster *clusterInfo) *balanceOperator {
 		return nil
 	}
 
-	diff := source.resourceRatio(s.kind) - target.resourceRatio(s.kind)
+	diff := source.storageRatio() - target.storageRatio()
 	if diff < s.opt.GetMinBalanceDiffRatio() {
 		return nil
 	}
@@ -118,7 +114,6 @@ func (s *storageBalancer) Schedule(cluster *clusterInfo) *balanceOperator {
 type replicaChecker struct {
 	cluster  *clusterInfo
 	opt      *scheduleOption
-	kind     ResourceKind
 	selector Selector
 }
 
@@ -130,7 +125,6 @@ func newReplicaChecker(cluster *clusterInfo, opt *scheduleOption) *replicaChecke
 	return &replicaChecker{
 		cluster:  cluster,
 		opt:      opt,
-		kind:     storageKind,
 		selector: newBalanceSelector(storageKind, filters),
 	}
 }
