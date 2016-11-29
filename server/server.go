@@ -102,7 +102,7 @@ func CreateServer(cfg *Config) (*Server, error) {
 
 	s := &Server{
 		cfg:           cfg,
-		scheduleOpt:   newScheduleOption(&cfg.ScheduleCfg),
+		scheduleOpt:   newScheduleOption(cfg),
 		isLeaderValue: 0,
 		conns:         make(map[*conn]struct{}),
 		closed:        1,
