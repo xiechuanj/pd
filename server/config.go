@@ -277,7 +277,7 @@ type ScheduleConfig struct {
 
 	// If the leader count of one store is less than this value,
 	// it will never be used as a source store.
-	MinLeaderCount uint64 `toml:"max-leader-count" json:"max-leader-count"`
+	MinLeaderCount uint64 `toml:"min-leader-count" json:"min-leader-count"`
 
 	// If the snapshot count of one store is greater than this value,
 	// it will never be used as a source or target store.
