@@ -297,9 +297,9 @@ type ScheduleConfig struct {
 	LeaderScheduleInterval timeutil.Duration `toml:"leader-schedule-interval" json:"leader-schedule-interval"`
 
 	// StorageScheduleLimit is the max coexist storage schedules.
-	StorageScheduleLimit uint64 `toml:"leader-schedule-limit" json:"leader-schedule-limit"`
+	StorageScheduleLimit uint64 `toml:"storage-schedule-limit" json:"storage-schedule-limit"`
 	// StorageScheduleInterval is the interval to schedule storage.
-	StorageScheduleInterval timeutil.Duration `toml:"leader-schedule-interval" json:"leader-schedule-interval"`
+	StorageScheduleInterval timeutil.Duration `toml:"storage-schedule-interval" json:"storage-schedule-interval"`
 }
 
 const (
