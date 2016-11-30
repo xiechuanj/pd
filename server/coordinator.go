@@ -23,7 +23,9 @@ import (
 )
 
 const (
-	regionCacheTTL = 2 * time.Minute
+	regionCacheTTL     = 2 * time.Minute
+	historiesCacheSize = 1000
+	eventsCacheSize    = 1000
 )
 
 type coordinator struct {
@@ -50,8 +52,8 @@ func newCoordinator(cluster *clusterInfo, opt *scheduleOption) *coordinator {
 		opt:         opt,
 		checker:     newReplicaChecker(cluster, opt),
 		regionCache: newExpireRegionCache(regionCacheTTL, regionCacheTTL),
-		histories:   newLRUCache(1000),
-		events:      newFifoCache(1000),
+		histories:   newLRUCache(historiesCacheSize),
+		events:      newFifoCache(eventsCacheSize),
 	}
 
 	c.ctx, c.cancel = context.WithCancel(context.TODO())
@@ -112,7 +114,8 @@ func (c *coordinator) runScheduler(s Scheduler, ctrl Controller) {
 			if op := s.Schedule(c.cluster); op != nil {
 				c.addOperator(s.GetResourceKind(), op)
 			}
-		case <-ctrl.Done():
+		case <-ctrl.Ctx().Done():
+			log.Infof("%v stopped: %v", s.GetName(), ctrl.Ctx().Err())
 			return
 		}
 	}
@@ -197,8 +200,8 @@ func (c *coordinator) getOperatorCount(kind ResourceKind) int {
 
 // Controller is an interface to control the speed of different schedulers.
 type Controller interface {
+	Ctx() context.Context
 	Stop()
-	Done() <-chan struct{}
 	GetInterval() time.Duration
 	AllowSchedule() bool
 }
@@ -215,12 +218,12 @@ func newLeaderController(c *coordinator) *leaderController {
 	return l
 }
 
-func (l *leaderController) Stop() {
-	l.cancel()
+func (l *leaderController) Ctx() context.Context {
+	return l.ctx
 }
 
-func (l *leaderController) Done() <-chan struct{} {
-	return l.ctx.Done()
+func (l *leaderController) Stop() {
+	l.cancel()
 }
 
 func (l *leaderController) GetInterval() time.Duration {
@@ -243,12 +246,12 @@ func newStorageController(c *coordinator) *storageController {
 	return s
 }
 
-func (s *storageController) Stop() {
-	s.cancel()
+func (s *storageController) Ctx() context.Context {
+	return s.ctx
 }
 
-func (s *storageController) Done() <-chan struct{} {
-	return s.ctx.Done()
+func (s *storageController) Stop() {
+	s.cancel()
 }
 
 func (s *storageController) GetInterval() time.Duration {

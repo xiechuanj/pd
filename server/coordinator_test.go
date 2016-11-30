@@ -168,7 +168,7 @@ func (s *testControllerSuite) test(c *C, co *coordinator, ctrl Controller, kind 
 	co.wg.Add(1)
 	go func() {
 		select {
-		case <-ctrl.Done():
+		case <-ctrl.Ctx().Done():
 			co.wg.Done()
 		}
 	}()
