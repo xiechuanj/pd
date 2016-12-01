@@ -14,6 +14,7 @@
 package server
 
 import (
+	"math/rand"
 	"net/http"
 	"path"
 	"strconv"
@@ -102,6 +103,7 @@ func CreateServer(cfg *Config) (*Server, error) {
 	}
 
 	log.Infof("PD config - %v", cfg)
+	rand.Seed(time.Now().UnixNano())
 
 	s := &Server{
 		cfg:           cfg,
