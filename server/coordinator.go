@@ -122,14 +122,19 @@ func (c *coordinator) runScheduler(s Scheduler, ctrl Controller) {
 }
 
 func (c *coordinator) addOperator(kind ResourceKind, op *balanceOperator) {
+	c.Lock()
+	defer c.Unlock()
+
 	regionID := op.Region.GetId()
+	if c.getOperatorLocked(regionID) != nil {
+		return
+	}
 	if _, ok := c.regionCache.get(regionID); ok {
 		return
 	}
-	if c.getOperator(regionID) != nil {
-		return
-	}
-	c.setOperator(kind, op)
+
+	collectOperatorCounterMetrics(op)
+	c.operators[kind][op.Region.GetId()] = op
 }
 
 func (c *coordinator) setOperator(kind ResourceKind, op *balanceOperator) {
@@ -156,13 +161,15 @@ func (c *coordinator) removeOperator(op *balanceOperator) {
 func (c *coordinator) getOperator(regionID uint64) *balanceOperator {
 	c.RLock()
 	defer c.RUnlock()
+	return c.getOperatorLocked(regionID)
+}
 
+func (c *coordinator) getOperatorLocked(regionID uint64) *balanceOperator {
 	for _, ops := range c.operators {
 		if op, ok := ops[regionID]; ok {
 			return op
 		}
 	}
-
 	return nil
 }
 
